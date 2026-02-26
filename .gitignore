@@ -22,6 +22,9 @@ npm-debug.log*
 # Azure deployment
 .deployment
 deploy.sh
+AzureCLI.msi
+*.zip
+azure-deployment-info.txt
 
 # Temporary files
 *.tmp
