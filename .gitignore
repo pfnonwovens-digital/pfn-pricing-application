@@ -19,8 +19,7 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# Azure deployment
-.deployment
+# Azure deployment - keep deploy.cmd for custom build
 deploy.sh
 AzureCLI.msi
 *.zip
