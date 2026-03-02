@@ -25,8 +25,14 @@ auth.initializeDatabase().catch(err => {
 // ==================== FRONTEND ROUTING WITH AUTHENTICATION ====================
 
 // Root route - serve login page (must be BEFORE static middleware)
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "src", "frontend", "login.html"));
+app.get("/", (req, res, next) => {
+  const filePath = path.join(__dirname, "src", "frontend", "login.html");
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error("Error serving login.html:", err);
+      next(err);
+    }
+  });
 });
 
 // Protected routes - require authentication (must be BEFORE static middleware)
@@ -37,8 +43,14 @@ const protectedRoutes = [
 ];
 
 protectedRoutes.forEach(route => {
-  app.get(route.path, auth.authMiddleware, (req, res) => {
-    res.sendFile(path.join(__dirname, "src", "frontend", route.file));
+  app.get(route.path, auth.authMiddleware, (req, res, next) => {
+    const filePath = path.join(__dirname, "src", "frontend", route.file);
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error(`Error serving ${route.file}:`, err);
+        next(err);
+      }
+    });
   });
 });
 
@@ -431,17 +443,32 @@ app.use((req, res) => {
   res.status(404).json({ error: "Endpoint not found", path: req.path });
 });
 
-// Error handler
+// Global error handler - must be last
 app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({ error: "Internal server error", details: err.message });
+  console.error("❌ Unhandled error:", {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method
+  });
+  
+  // If headers already sent, delegate to default express error handler
+  if (res.headersSent) {
+    return next(err);
+  }
+  
+  res.status(err.status || 500).json({ 
+    error: "Internal server error", 
+    details: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`API docs:`);
+  console.log(`✓ Server running at http://localhost:${PORT}`);
+  console.log(`✓ Database initialized at ${path.join(__dirname, 'data', 'mini_erp.db')}`);
+  console.log(``);
   console.log(`  - GET /api/health - Health check`);
   console.log(`  - GET /api/metadata - Available filters`);
   console.log(`  - GET /api/costs - Main costing endpoint`);
