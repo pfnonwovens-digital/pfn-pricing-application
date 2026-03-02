@@ -490,11 +490,88 @@ curl http://localhost:3000/api/debug/fx
 - [x] Protected frontend routes requiring authentication
 - [x] Logout functionality across all pages
 - [x] Bcryptjs for password hashing (Azure-compatible)
+- [x] Access request system for @pfnonwovens.com employees (Phase 2 ✅)
+- [x] Group management foundation for future group-based permissions
+- [x] Admin dashboard for managing user access requests
+- [x] Approval workflow with automatic user account creation
+
+## Phase 2: Access Request & Group Management (NEW)
+
+### Features
+- **Public Access Request Form** (`/request-access.html`): Employees with @pfnonwovels.com email can request access
+- **Admin Dashboard** (`/admin-access.html`): Admins can review, approve, and deny access requests
+- **Group System**: Foundation for group-based permissions (ready for corporate migration)
+- **Automatic Account Creation**: When an admin approves a request, a user account is automatically created with a temporary password
+
+### How It Works
+
+**For Employees Requesting Access:**
+1. Visit `/request-access.html` (linked from login page)
+2. Enter @pfnonwovels.com email address, full name, and optional reason
+3. Submit request and wait for admin approval
+
+**For Admins Managing Requests:**
+1. Visit `/admin-access.html` (button visible on dashboard for admin users)
+2. Review pending access requests
+3. Approve request → User account created with temporary password
+4. Or deny request with optional reason
+5. View approved and denied requests by filtering
+
+### Database Schema
+
+**access_requests** table:
+- `id` - Unique request ID
+- `email` - Requester email
+- `full_name` - Requester name
+- `reason` - Optional reason for request
+- `status` - pending/approved/denied
+- `requested_at` - Request timestamp
+- `reviewed_by` - Admin user ID (if approved/denied)
+- `reviewed_at` - Approval/denial timestamp
+- `notes` - Approval/denial notes
+
+**groups** table:
+- `id` - Group ID
+- `name` - Group name (e.g., "Product Managers")
+- `description` - Group description
+- `permissions` - JSON array of group permissions
+- `created_at` - Creation timestamp
+
+**user_groups** table:
+- Maps users to groups for group-based access control
+
+### API Endpoints
+
+#### Public (No Auth Required)
+- `POST /api/auth/request-access` - Submit access request
+  - Body: `{ email, fullName, reason }`
+  - Returns: Request ID and status
+
+#### Admin Only (Requires `user:manage` permission)
+- `GET /api/admin/access-requests` - List access requests
+  - Query params: `status` (pending/approved/denied, optional)
+  - Returns: Array of requests
+
+- `POST /api/admin/access-requests/:id/approve` - Approve request
+  - Returns: User ID, email, temporary password
+
+- `POST /api/admin/access-requests/:id/deny` - Deny request
+  - Body: `{ reason }` (optional)
+  - Returns: Confirmation
+
+- `GET /api/admin/groups` - List all groups
+  - Returns: Array of groups
+
+- `POST /api/admin/groups` - Create group
+  - Body: `{ name, description, permissions }`
+  - Returns: Created group
 
 ## Future Enhancements
 
+- [ ] Azure Entra ID integration (Phase 3 - Corporate Migration)
+- [ ] SSO login for corporate domain accounts
+- [ ] Auto-sync groups from corporate directory
 - [ ] Database backend for product/costing data (instead of Excel files)
-- [ ] Azure Entra ID / OAuth integration
 - [ ] Data upload/refresh endpoints for Excel files
 - [ ] Multi-language support
 - [ ] Advanced filtering (date ranges, cost ranges)
@@ -504,6 +581,7 @@ curl http://localhost:3000/api/debug/fx
 - [ ] Material sourcing optimization
 - [ ] Line efficiency metrics
 - [ ] Email notifications for cost alerts
+- [ ] Email notifications for access request approval/denial
 
 ## Troubleshooting
 
