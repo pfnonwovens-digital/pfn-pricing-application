@@ -25,7 +25,7 @@ npm start                       # Start server
 ```
 
 You'll be redirected to login. **Test Credentials**:
-- Email: `testuser@pfnonwovels.com`
+- Email: `testuser@pfnonwovens.com`
 - Password: `TestPass123`
 
 After login, you'll access:
@@ -208,6 +208,13 @@ npm start
 # Custom port
 PORT=8080 npm start
 ```
+
+### Azure Deployment
+When deploying to Azure App Service (Windows):
+1. Push to GitHub - Azure auto-deploys via GitHub Actions
+2. If you see HTTP 500 errors on first deployment, use the **Kudu workaround** (see Troubleshooting section)
+3. The workaround ensures sqlite3 native binaries are compiled for Azure's runtime environment
+4. After running the Kudu commands, restart the app and it will work without errors
 
 ## API Endpoints
 
@@ -516,6 +523,23 @@ curl http://localhost:3000/api/debug/fx
 ### CSS not loading
 - Clear browser cache (Ctrl+Shift+Delete)
 - Ensure styles.css is served correctly
+
+### Azure: HTTP 500 errors or "node_sqlite3.node is not a valid Win32 application"
+**Cause**: Native sqlite3 modules compiled locally don't match Azure's Windows runtime architecture.
+
+**Solution** (Kudu Console Workaround):
+1. Go to Azure Portal → Your App Service → Advanced Tools (Kudu) → Debug Console
+2. Navigate to `D:\home\site\wwwroot`
+3. Run these commands:
+   ```powershell
+   npm cache clean --force
+   npm install
+   npm rebuild sqlite3
+   ```
+4. Restart the app service
+5. The website should now work without 500 errors
+
+**Why this works**: The rebuild command recompiles sqlite3 native binaries in Azure's specific Node.js environment, ensuring compatibility.
 
 ## Support
 
