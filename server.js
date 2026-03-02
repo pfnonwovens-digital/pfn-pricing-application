@@ -134,6 +134,90 @@ app.post("/api/auth/logout", auth.authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== ACCESS REQUEST ENDPOINTS ====================
+
+// Submit access request (public endpoint for @pfnonwovens.com users)
+app.post("/api/auth/request-access", async (req, res) => {
+  try {
+    const { email, fullName, reason } = req.body;
+    const result = await auth.requestAccess(email, fullName, reason);
+    res.status(201).json({
+      success: true,
+      message: 'Access request submitted. Please wait for approval from an administrator.',
+      request: result
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Get access requests (admin only)
+app.get("/api/admin/access-requests", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const status = req.query.status || null;
+    const requests = await auth.getAccessRequests(status);
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Approve access request (admin only)
+app.post("/api/admin/access-requests/:id/approve", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const result = await auth.approveAccessRequest(req.params.id, req.user.id);
+    res.json({
+      success: true,
+      message: 'Access request approved. User account created.',
+      data: result
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Deny access request (admin only)
+app.post("/api/admin/access-requests/:id/deny", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const result = await auth.denyAccessRequest(req.params.id, req.user.id, reason);
+    res.json({
+      success: true,
+      message: 'Access request denied.',
+      data: result
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// ==================== GROUP MANAGEMENT ENDPOINTS ====================
+
+// Get all groups (admin only)
+app.get("/api/admin/groups", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const groups = await auth.getGroups();
+    res.json(groups);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create new group (admin only)
+app.post("/api/admin/groups", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const { name, description, permissions } = req.body;
+    const group = await auth.createGroup(name, description, permissions);
+    res.status(201).json({
+      success: true,
+      message: 'Group created successfully.',
+      group
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // Main costing endpoint
 app.get("/api/costs", (req, res) => {
   try {

@@ -79,6 +79,7 @@ function dbAll(sql, params = []) {
       });
     });
   });
+}
 
 // ==================== DATABASE INITIALIZATION ====================
 
@@ -107,6 +108,46 @@ async function initializeDatabase() {
         details TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+
+    // Groups table - for future group-based access management
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS groups (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        permissions TEXT DEFAULT '[]',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // User-Group mapping table
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS user_groups (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        user_id TEXT NOT NULL,
+        group_id TEXT NOT NULL,
+        added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+        UNIQUE(user_id, group_id)
+      )
+    `);
+
+    // Access requests table - for @pfnonwovens.com users to request access
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS access_requests (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        email TEXT NOT NULL,
+        full_name TEXT NOT NULL,
+        reason TEXT,
+        status TEXT DEFAULT 'pending',
+        requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        reviewed_by TEXT,
+        reviewed_at DATETIME,
+        notes TEXT,
+        FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
       )
     `);
 
@@ -303,6 +344,210 @@ function requirePermission(permission) {
   };
 }
 
+// ==================== ACCESS REQUEST MANAGEMENT ====================
+
+async function requestAccess(email, fullName, reason = '') {
+  if (!email || !fullName) {
+    throw new Error('Email and full name required');
+  }
+
+  // Validate email is @pfnonwovens.com
+  if (!email.endsWith('@pfnonwovens.com')) {
+    throw new Error('Only @pfnonwovens.com email addresses can request access');
+  }
+
+  // Check if email already has an account
+  const existing = await dbGet('SELECT id FROM users WHERE email = ?', [email]);
+  if (existing) {
+    throw new Error('User already has an account');
+  }
+
+  // Check if already has pending request
+  const pending = await dbGet(
+    'SELECT id FROM access_requests WHERE email = ? AND status = ?',
+    [email, 'pending']
+  );
+  if (pending) {
+    throw new Error('You already have a pending access request');
+  }
+
+  // Create access request
+  const result = await dbRun(
+    'INSERT INTO access_requests (email, full_name, reason) VALUES (?, ?, ?)',
+    [email, fullName, reason]
+  );
+
+  await auditLog(null, 'ACCESS_REQUEST', 'access', { email, fullName });
+
+  return {
+    id: result.id,
+    email,
+    fullName,
+    status: 'pending',
+    requested_at: new Date().toISOString()
+  };
+}
+
+async function getAccessRequests(status = null) {
+  let sql = 'SELECT * FROM access_requests';
+  let params = [];
+
+  if (status) {
+    sql += ' WHERE status = ?';
+    params = [status];
+  }
+
+  sql += ' ORDER BY requested_at DESC';
+
+  return dbAll(sql, params);
+}
+
+async function approveAccessRequest(requestId, adminUserId) {
+  const request = await dbGet('SELECT * FROM access_requests WHERE id = ?', [requestId]);
+
+  if (!request) {
+    throw new Error('Access request not found');
+  }
+
+  if (request.status !== 'pending') {
+    throw new Error(`Cannot approve request with status: ${request.status}`);
+  }
+
+  // Create user account with a default temporary password
+  const tempPassword = Math.random().toString(36).slice(-12);
+  const passwordHash = await hashPassword(tempPassword);
+
+  const userResult = await dbRun(
+    'INSERT INTO users (email, name, password_hash, role, is_active) VALUES (?, ?, ?, ?, ?)',
+    [request.email, request.full_name, passwordHash, 'viewer', 1]
+  );
+
+  // Update request status
+  await dbRun(
+    'UPDATE access_requests SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?',
+    [adminUserId, 'approved', new Date().toISOString(), requestId]
+  );
+
+  await auditLog(adminUserId, 'ACCESS_REQUEST_APPROVED', 'access', {
+    email: request.email,
+    userId: userResult.id
+  });
+
+  return {
+    userId: userResult.id,
+    email: request.email,
+    name: request.full_name,
+    tempPassword,
+    message: 'User account created. Please share temporary password securely.'
+  };
+}
+
+async function denyAccessRequest(requestId, adminUserId, reason = '') {
+  const request = await dbGet('SELECT * FROM access_requests WHERE id = ?', [requestId]);
+
+  if (!request) {
+    throw new Error('Access request not found');
+  }
+
+  if (request.status !== 'pending') {
+    throw new Error(`Cannot deny request with status: ${request.status}`);
+  }
+
+  await dbRun(
+    'UPDATE access_requests SET status = ?, reviewed_by = ?, reviewed_at = ?, notes = ? WHERE id = ?',
+    ['denied', adminUserId, new Date().toISOString(), reason, requestId]
+  );
+
+  await auditLog(adminUserId, 'ACCESS_REQUEST_DENIED', 'access', {
+    email: request.email,
+    reason
+  });
+
+  return { status: 'denied', email: request.email };
+}
+
+// ==================== GROUP MANAGEMENT ====================
+
+async function createGroup(name, description = '', permissions = []) {
+  const existing = await dbGet('SELECT id FROM groups WHERE name = ?', [name]);
+  if (existing) {
+    throw new Error('Group already exists');
+  }
+
+  const result = await dbRun(
+    'INSERT INTO groups (name, description, permissions) VALUES (?, ?, ?)',
+    [name, description, JSON.stringify(permissions)]
+  );
+
+  return {
+    id: result.id,
+    name,
+    description,
+    permissions
+  };
+}
+
+async function getGroups() {
+  const groups = await dbAll('SELECT * FROM groups ORDER BY name');
+  return groups.map(g => ({
+    ...g,
+    permissions: JSON.parse(g.permissions)
+  }));
+}
+
+async function addUserToGroup(userId, groupId) {
+  // Verify user exists
+  const user = await dbGet('SELECT id FROM users WHERE id = ?', [userId]);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  // Verify group exists
+  const group = await dbGet('SELECT id FROM groups WHERE id = ?', [groupId]);
+  if (!group) {
+    throw new Error('Group not found');
+  }
+
+  // Add user to group
+  try {
+    await dbRun(
+      'INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)',
+      [userId, groupId]
+    );
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) {
+      throw new Error('User is already in this group');
+    }
+    throw err;
+  }
+
+  return { userId, groupId, status: 'added' };
+}
+
+async function removeUserFromGroup(userId, groupId) {
+  await dbRun(
+    'DELETE FROM user_groups WHERE user_id = ? AND group_id = ?',
+    [userId, groupId]
+  );
+
+  return { userId, groupId, status: 'removed' };
+}
+
+async function getUserGroups(userId) {
+  const groups = await dbAll(
+    `SELECT g.* FROM groups g
+     JOIN user_groups ug ON g.id = ug.group_id
+     WHERE ug.user_id = ?
+     ORDER BY g.name`,
+    [userId]
+  );
+
+  return groups.map(g => ({
+    ...g,
+    permissions: JSON.parse(g.permissions)
+  }));
+}
+
 // ==================== EXPORTS ====================
 
 module.exports = {
@@ -323,6 +568,19 @@ module.exports = {
   // Middleware
   authMiddleware,
   requirePermission,
+
+  // Access requests
+  requestAccess,
+  getAccessRequests,
+  approveAccessRequest,
+  denyAccessRequest,
+
+  // Groups
+  createGroup,
+  getGroups,
+  addUserToGroup,
+  removeUserFromGroup,
+  getUserGroups,
 
   // Utilities
   auditLog,

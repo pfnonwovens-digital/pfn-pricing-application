@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Access Management - Mini ERP</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            background-color: #f5f5f5;
+        }
+
+        .admin-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            margin: 0;
+            color: #333;
+        }
+
+        .logout-btn {
+            padding: 10px 20px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .logout-btn:hover {
+            background-color: #da190b;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #999;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: color 0.3s;
+        }
+
+        .tab.active {
+            color: #4CAF50;
+            border-bottom-color: #4CAF50;
+        }
+
+        .tab:hover {
+            color: #333;
+        }
+
+        .tab-content {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .alert-success {
+            background-color: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+        }
+
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th {
+            background-color: #f5f5f5;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+            border-bottom: 2px solid #ddd;
+            color: #333;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .status-approved {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status-denied {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+
+        .btn-approve {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .btn-approve:hover {
+            background-color: #45a049;
+        }
+
+        .btn-deny {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .btn-deny:hover {
+            background-color: #da190b;
+        }
+
+        .btn-primary {
+            background-color: #2196F3;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #0b7dda;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.4);
+        }
+
+        .modal.active {
+            display: block;
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 10% auto;
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 500px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #333;
+        }
+
+        .modal-body {
+            margin-bottom: 20px;
+        }
+
+        .modal-body textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .btn-cancel {
+            background-color: #f5f5f5;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+
+        .btn-cancel:hover {
+            background-color: #e8e8e8;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .filter-group {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body style="background-color: #f5f5f5;">
+    <div class="admin-container">
+        <div class="header">
+            <h1>🔧 Admin - Access Management</h1>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+
+        <div id="alertSuccess" class="alert alert-success"></div>
+        <div id="alertError" class="alert alert-error"></div>
+        <div id="alertInfo" class="alert alert-info"></div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('requests')">
+                📋 Access Requests
+            </button>
+            <button class="tab" onclick="switchTab('groups')">
+                👥 User Groups
+            </button>
+        </div>
+
+        <!-- Access Requests Tab -->
+        <div id="requests" class="tab-content active">
+            <div class="filter-group">
+                <label for="filterStatus">Filter by Status:</label>
+                <select id="filterStatus" onchange="loadAccessRequests()">
+                    <option value="">All Requests</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="denied">Denied</option>
+                </select>
+            </div>
+
+            <div id="requestsLoading" class="loading" style="display:none">
+                ⏳ Loading requests...
+            </div>
+
+            <div id="requestsContent"></div>
+        </div>
+
+        <!-- Groups Tab -->
+        <div id="groups" class="tab-content">
+            <button class="btn-primary" onclick="showCreateGroupModal()" style="margin-bottom: 20px;">
+                + Create New Group
+            </button>
+
+            <div id="groupsLoading" class="loading" style="display:none">
+                ⏳ Loading groups...
+            </div>
+
+            <div id="groupsContent"></div>
+        </div>
+    </div>
+
+    <!-- Deny Request Modal -->
+    <div id="denyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Deny Access Request</h2>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to deny this request?</p>
+                <label>Reason (optional):</label>
+                <textarea id="denyReason" placeholder="Enter reason for denial..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeDenyModal()">Cancel</button>
+                <button class="btn-deny" onclick="confirmDeny()">Deny</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Group Modal -->
+    <div id="createGroupModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create New Group</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="groupName">Group Name *</label>
+                    <input type="text" id="groupName" placeholder="e.g., Product Managers" required />
+                </div>
+                <div class="form-group">
+                    <label for="groupDescription">Description</label>
+                    <textarea id="groupDescription" placeholder="Describe the group's purpose..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeCreateGroupModal()">Cancel</button>
+                <button class="btn-primary" onclick="createGroup()">Create Group</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentDenyRequestId = null;
+        const token = localStorage.getItem('authToken');
+
+        function checkAuth() {
+            if (!token) {
+                window.location.href = '/login.html';
+            }
+        }
+
+        function showAlert(element, message, type = 'success') {
+            const alertElement = document.getElementById(element);
+            alertElement.textContent = message;
+            alertElement.style.display = 'block';
+            setTimeout(() => {
+                alertElement.style.display = 'none';
+            }, 4000);
+        }
+
+        function switchTab(tabName) {
+            // Hide all content
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Show selected content
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+
+            // Load content
+            if (tabName === 'requests') {
+                loadAccessRequests();
+            } else if (tabName === 'groups') {
+                loadGroups();
+            }
+        }
+
+        async function loadAccessRequests() {
+            const loading = document.getElementById('requestsLoading');
+            const content = document.getElementById('requestsContent');
+            const filterStatus = document.getElementById('filterStatus').value;
+
+            loading.style.display = 'block';
+            content.innerHTML = '';
+
+            try {
+                const url = `/api/admin/access-requests${filterStatus ? '?status=' + filterStatus : ''}`;
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load requests');
+                }
+
+                const requests = await response.json();
+                loading.style.display = 'none';
+
+                if (requests.length === 0) {
+                    content.innerHTML = `
+                        <div class="empty-state">
+                            <p>No access requests found</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Full Name</th>
+                                <th>Requested</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                requests.forEach(req => {
+                    const requestedDate = new Date(req.requested_at).toLocaleDateString();
+                    const statusClass = `status-${req.status}`;
+                    html += `
+                        <tr>
+                            <td>${req.email}</td>
+                            <td>${req.full_name}</td>
+                            <td>${requestedDate}</td>
+                            <td><span class="status-badge ${statusClass}">${req.status.toUpperCase()}</span></td>
+                            <td>
+                                <div class="action-buttons">
+                    `;
+
+                    if (req.status === 'pending') {
+                        html += `
+                            <button class="btn-approve" onclick="approveRequest('${req.id}')">Approve</button>
+                            <button class="btn-deny" onclick="showDenyModal('${req.id}')">Deny</button>
+                        `;
+                    }
+
+                    html += `
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                        </tbody>
+                    </table>
+                `;
+
+                content.innerHTML = html;
+            } catch (err) {
+                loading.style.display = 'none';
+                showAlert('alertError', '❌ Error: ' + err.message, 'error');
+            }
+        }
+
+        async function approveRequest(requestId) {
+            if (!confirm('Are you sure you want to approve this request?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/access-requests/${requestId}/approve`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('alertSuccess', `✅ Request approved! Temporary password: ${data.data.tempPassword}`);
+                    loadAccessRequests();
+                } else {
+                    showAlert('alertError', '❌ ' + data.error, 'error');
+                }
+            } catch (err) {
+                showAlert('alertError', '❌ Error: ' + err.message, 'error');
+            }
+        }
+
+        function showDenyModal(requestId) {
+            currentDenyRequestId = requestId;
+            document.getElementById('denyReason').value = '';
+            document.getElementById('denyModal').classList.add('active');
+        }
+
+        function closeDenyModal() {
+            document.getElementById('denyModal').classList.remove('active');
+            currentDenyRequestId = null;
+        }
+
+        async function confirmDeny() {
+            const reason = document.getElementById('denyReason').value;
+
+            try {
+                const response = await fetch(`/api/admin/access-requests/${currentDenyRequestId}/deny`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ reason })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('alertSuccess', '✅ Request denied');
+                    closeDenyModal();
+                    loadAccessRequests();
+                } else {
+                    showAlert('alertError', '❌ ' + data.error, 'error');
+                }
+            } catch (err) {
+                showAlert('alertError', '❌ Error: ' + err.message, 'error');
+            }
+        }
+
+        async function loadGroups() {
+            const loading = document.getElementById('groupsLoading');
+            const content = document.getElementById('groupsContent');
+
+            loading.style.display = 'block';
+            content.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/admin/groups', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load groups');
+                }
+
+                const groups = await response.json();
+                loading.style.display = 'none';
+
+                if (groups.length === 0) {
+                    content.innerHTML = `
+                        <div class="empty-state">
+                            <p>No groups created yet</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Group Name</th>
+                                <th>Description</th>
+                                <th>Permissions</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                groups.forEach(group => {
+                    const createdDate = new Date(group.created_at).toLocaleDateString();
+                    const permissions = group.permissions.length > 0 ? group.permissions.join(', ') : 'None';
+
+                    html += `
+                        <tr>
+                            <td>${group.name}</td>
+                            <td>${group.description || '-'}</td>
+                            <td>${permissions}</td>
+                            <td>${createdDate}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                        </tbody>
+                    </table>
+                `;
+
+                content.innerHTML = html;
+            } catch (err) {
+                loading.style.display = 'none';
+                showAlert('alertError', '❌ Error: ' + err.message, 'error');
+            }
+        }
+
+        function showCreateGroupModal() {
+            document.getElementById('createGroupModal').classList.add('active');
+        }
+
+        function closeCreateGroupModal() {
+            document.getElementById('createGroupModal').classList.remove('active');
+        }
+
+        async function createGroup() {
+            const name = document.getElementById('groupName').value.trim();
+            const description = document.getElementById('groupDescription').value.trim();
+
+            if (!name) {
+                showAlert('alertError', '❌ Group name is required', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/groups', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name,
+                        description,
+                        permissions: []
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('alertSuccess', '✅ Group created successfully');
+                    closeCreateGroupModal();
+                    loadGroups();
+                } else {
+                    showAlert('alertError', '❌ ' + data.error, 'error');
+                }
+            } catch (err) {
+                showAlert('alertError', '❌ Error: ' + err.message, 'error');
+            }
+        }
+
+        function logout() {
+            fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            }).then(() => {
+                localStorage.removeItem('authToken');
+                window.location.href = '/login.html';
+            });
+        }
+
+        // Initial load
+        checkAuth();
+        loadAccessRequests();
+    </script>
+</body>
+</html>

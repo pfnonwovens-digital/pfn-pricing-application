@@ -16,6 +16,7 @@
         <p class="subtitle">Product costing, materials, and line analysis</p>
       </div>
       <div class="header-right">
+        <button id="adminBtn" class="logout-btn" title="Admin Panel" style="display: none; margin-right: 10px; background-color: #ff9800;">Admin</button>
         <button id="logoutBtn" class="logout-btn" title="Logout">Logout</button>
         <img src="/data/PFN_logo.png" alt="PFNonwovens" class="company-logo company-logo-right" />
       </div>
@@ -202,12 +203,34 @@
       auth.logout();
     });
 
-    // Check if user is authenticated on page load
-    window.addEventListener('load', () => {
+    // Admin button - show for admin users
+    document.getElementById('adminBtn').addEventListener('click', () => {
+      window.location.href = '/admin-access.html';
+    });
+
+    // Check if user is authenticated on page load and show admin button if user is admin
+    window.addEventListener('load', async () => {
       const token = localStorage.getItem('authToken');
       if (!token) {
         // Not logged in, redirect to login
         window.location.href = '/';
+      } else {
+        // Check if user is admin
+        try {
+          const response = await fetch('/api/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (response.ok) {
+            const user = await response.json();
+            if (user.role === 'admin') {
+              document.getElementById('adminBtn').style.display = 'block';
+            }
+          }
+        } catch (err) {
+          console.warn('Could not check user role:', err);
+        }
       }
     });
   </script>  <script src="script.js"></script>
