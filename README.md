@@ -2,6 +2,54 @@
 
 A comprehensive Node.js + Express + Vanilla JavaScript ERP system for analyzing and managing manufacturing costs across multiple production lines, currencies, and product compositions.
 
+## 📚 Documentation
+
+**All project documentation is consolidated into 3 files:**
+
+| File | Purpose | Contains |
+|------|---------|----------|
+| [README.md](README.md) | **Main documentation** | Features, quick start, setup, file structure, costing formulas, troubleshooting |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | **Production setup** | Local dev, Azure deployment (3 methods), environment config, security, monitoring, backup |
+| [API.md](API.md) | **API reference** | All endpoints (auth, costing, products, export), request/response formats, examples |
+
+---
+
+## ⚡ Quick Start (5 minutes)
+
+```bash
+npm install                      # Install dependencies
+node scripts/setup.js           # Create test admin user
+npm start                       # Start server
+# Visit: http://localhost:3000/login.html
+```
+
+**Test Credentials**:
+- Email: `testuser@pfnonwovens.com`
+- Password: `TestPass123`
+
+---
+
+## 🔐 User Authentication (Phase 1 Complete ✅)
+
+**Features**:
+- SQLite database (file-based, zero configuration)
+- JWT tokens (48-hour sessions)
+- Bcrypt password hashing
+- Role-based access control (4 roles: Admin, Analyst, Engineer, Viewer)
+- Audit logging of all auth events
+- Login page + frontend auth helper
+
+**API Endpoints**:
+| Method | Endpoint | Auth | Purpose |
+|--------|----------|------|---------|
+| POST | `/api/auth/login` | No | Login with email/password |
+| GET | `/api/auth/me` | Yes | Get current user profile |
+| POST | `/api/auth/logout` | Yes | Logout (audit logged) |
+
+📖 See [API.md](API.md) for complete API reference and examples.
+
+---
+
 ## Features
 
 ### Core Functionality

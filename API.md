@@ -10,7 +10,101 @@ http://localhost:3000/api
 
 ## Authentication
 
-Currently, no authentication is required. Future versions will support API keys and user authentication.
+All authentication endpoints are available publicly. Costing endpoints are currently unprotected but can be secured by adding `auth.authMiddleware` to require authentication.
+
+### Authentication Endpoints
+
+#### POST /auth/login
+Authenticate user with email and password.
+
+**Request Body:**
+```json
+{
+  "email": "testuser@pfnonwovens.com",
+  "password": "TestPass123"
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjA1MGZkMzg5NzViZDJiYzJlMTAzY2ZiYmYzNmY3NmM3IiwiZW1haWwiOiJ0ZXN0dXNlckBwZm5vbndvdmVucy5jb20iLCJuYW1lIjoiVGVzdCBVc2VyIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzcyNDU4MjY2LCJleHAiOjE3NzI2MzEwNjZ9.6E0Bh6gvgWzHgy9TEbSbDRRlQnmSu4lxrbCHhjsPApk",
+  "user": {
+    "id": "050fd38975bd2bc2e103cfbbf36f76c7",
+    "email": "testuser@pfnonwovens.com",
+    "name": "Test User",
+    "role": "admin"
+  }
+}
+```
+
+**Error Response (401):**
+```json
+{
+  "success": false,
+  "error": "Invalid password"
+}
+```
+
+**Status Codes:**
+- 200 OK
+- 401 Unauthorized (invalid credentials)
+- 500 Internal Server Error
+
+---
+
+#### GET /auth/me
+Get current authenticated user profile.
+
+**Required Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**Response (200):**
+```json
+{
+  "id": "050fd38975bd2bc2e103cfbbf36f76c7",
+  "email": "testuser@pfnonwovens.com",
+  "name": "Test User",
+  "role": "admin",
+  "is_active": 1,
+  "created_at": "2026-03-02 13:13:29"
+}
+```
+
+**Status Codes:**
+- 200 OK
+- 401 Unauthorized (missing or invalid token)
+- 404 Not Found (token valid but user deleted)
+- 500 Internal Server Error
+
+---
+
+#### POST /auth/logout
+Logout current user and record audit log.
+
+**Required Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**Response (200):**
+```json
+{
+  "success": true
+}
+```
+
+**Status Codes:**
+- 200 OK
+- 401 Unauthorized (missing or invalid token)
+- 500 Internal Server Error
+
+---
+
+## Using the API with Authentication
 
 ## Response Format
 
@@ -655,6 +749,32 @@ curl "http://localhost:3000/api/metadata"
 
 ```bash
 curl "http://localhost:3000/api/debug/materials" | jq '.materials'
+```
+
+### Example 6: Authentication Flow
+
+**Step 1: Login**
+```powershell
+$response = Invoke-RestMethod -Uri "http://localhost:3000/api/auth/login" `
+  -Method POST `
+  -Body '{"email":"testuser@pfnonwovens.com","password":"TestPass123"}' `
+  -ContentType 'application/json'
+
+$token = $response.token
+```
+
+**Step 2: Use token for authenticated requests**
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/api/auth/me" `
+  -Method GET `
+  -Headers @{"Authorization"="Bearer $token"}
+```
+
+**Step 3: Logout**
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/api/auth/logout" `
+  -Method POST `
+  -Headers @{"Authorization"="Bearer $token"}
 ```
 
 ---

@@ -8,12 +8,19 @@ const { loadLines } = require("./src/backend/lines");
 const { loadMaterials } = require("./src/backend/materials");
 const { loadFxRates } = require("./src/backend/fx");
 const { getEditableProducts, updateProduct, searchProducts, duplicateProduct, deleteProduct } = require("./src/backend/products-editor");
+const auth = require("./src/backend/auth");
 const XLSX = require("xlsx");
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Initialize database on startup
+auth.initializeDatabase().catch(err => {
+  console.error("Failed to initialize database:", err);
+  process.exit(1);
+});
 
 // Serve frontend files
 app.use(express.static(path.join(__dirname, "src", "frontend")));
@@ -23,6 +30,42 @@ app.use('/data', express.static(path.join(__dirname, 'data')));
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// ==================== AUTHENTICATION ENDPOINTS ====================
+
+// Login endpoint
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const result = await auth.login(email, password);
+    res.json(result);
+  } catch (err) {
+    res.status(401).json({ success: false, error: err.message });
+  }
+});
+
+// Get current user
+app.get("/api/auth/me", auth.authMiddleware, async (req, res) => {
+  try {
+    const user = await auth.getCurrentUser(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Logout endpoint (frontend just clears token, but good for audit logging)
+app.post("/api/auth/logout", auth.authMiddleware, async (req, res) => {
+  try {
+    await auth.auditLog(req.user.id, 'LOGOUT', 'auth', {});
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Main costing endpoint
