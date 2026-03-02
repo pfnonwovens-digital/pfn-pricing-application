@@ -22,39 +22,31 @@ auth.initializeDatabase().catch(err => {
   process.exit(1);
 });
 
-// ==================== FRONTEND ROUTING WITH AUTHENTICATION ====================
+// ==================== FRONTEND ROUTING ====================
 
-// Root route - serve login page (must be BEFORE static middleware)
-app.get("/", (req, res, next) => {
-  const filePath = path.join(__dirname, "src", "frontend", "login.html");
-  res.sendFile(filePath, (err) => {
-    if (err) {
-      console.error("Error serving login.html:", err);
-      next(err);
-    }
-  });
+// Redirect root to login page
+app.get("/", (req, res) => {
+  res.redirect("/login.html");
 });
 
-// Protected routes - require authentication (must be BEFORE static middleware)
-const protectedRoutes = [
-  { path: "/dashboard", file: "index.html" },
-  { path: "/bom-calculator", file: "bom-calculator.html" },
-  { path: "/products", file: "products-editor.html" }
-];
-
-protectedRoutes.forEach(route => {
-  app.get(route.path, auth.authMiddleware, (req, res, next) => {
-    const filePath = path.join(__dirname, "src", "frontend", route.file);
-    res.sendFile(filePath, (err) => {
-      if (err) {
-        console.error(`Error serving ${route.file}:`, err);
-        next(err);
-      }
-    });
-  });
+// Middleware to map extensionless URLs to HTML files
+app.use((req, res, next) => {
+  // Map URLs to actual HTML files
+  const urlMap = {
+    '/dashboard': '/index.html',
+    '/bom-calculator': '/bom-calculator.html',
+    '/products': '/products-editor.html'
+  };
+  
+  if (urlMap[req.path]) {
+    console.log(`Mapping ${req.path} to ${urlMap[req.path]}`);
+    req.url = urlMap[req.path];
+  }
+  
+  next();
 });
 
-// Public static files (CSS, JS, images) - served without authentication
+// Public static files (CSS, JS, HTML, etc.)
 app.use(express.static(path.join(__dirname, "src", "frontend")));
 
 // Serve data files (e.g., PFN_logo.png) from /data
