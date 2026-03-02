@@ -29,25 +29,24 @@ app.get("/", (req, res) => {
   res.redirect("/login.html");
 });
 
-// Middleware to map extensionless URLs to HTML files
-app.use((req, res, next) => {
-  // Map URLs to actual HTML files
-  const urlMap = {
-    '/dashboard': '/index.html',
-    '/bom-calculator': '/bom-calculator.html',
-    '/products': '/products-editor.html'
-  };
-  
-  if (urlMap[req.path]) {
-    console.log(`Mapping ${req.path} to ${urlMap[req.path]}`);
-    req.url = urlMap[req.path];
-  }
-  
-  next();
+// Map specific URLs to HTML files - use sendFile directly
+app.get("/dashboard", (req, res) => {
+  res.sendFile(path.join(__dirname, "src", "frontend", "index.html"), { root: process.cwd() });
+});
+
+app.get("/bom-calculator", (req, res) => {
+  res.sendFile(path.join(__dirname, "src", "frontend", "bom-calculator.html"), { root: process.cwd() });
+});
+
+app.get("/products", (req, res) => {
+  res.sendFile(path.join(__dirname, "src", "frontend", "products-editor.html"), { root: process.cwd() });
 });
 
 // Public static files (CSS, JS, HTML, etc.)
-app.use(express.static(path.join(__dirname, "src", "frontend")));
+app.use(express.static(path.join(__dirname, "src", "frontend"), {
+  dotfiles: 'deny',
+  index: false
+}));
 
 // Serve data files (e.g., PFN_logo.png) from /data
 app.use('/data', express.static(path.join(__dirname, 'data')));
