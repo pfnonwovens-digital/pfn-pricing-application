@@ -67,11 +67,20 @@ call :SelectNodeVersion
 IF EXIST "%DEPLOYMENT_TARGET%\package.json" (
   pushd "%DEPLOYMENT_TARGET%"
   echo Installing npm packages and rebuilding native modules...
-  call npm install --production
+  
+  :: Remove existing sqlite3 to force fresh install
+  IF EXIST "%DEPLOYMENT_TARGET%\node_modules\sqlite3" (
+    echo Removing existing sqlite3 module...
+    rmdir /s /q "%DEPLOYMENT_TARGET%\node_modules\sqlite3"
+  )
+  
+  :: Install packages
+  call npm install --production --no-optional
   IF !ERRORLEVEL! NEQ 0 goto error
   
-  echo Rebuilding sqlite3 for Azure runtime...
-  call npm rebuild sqlite3
+  :: Force rebuild sqlite3 from source for Azure architecture
+  echo Rebuilding sqlite3 for Azure Windows runtime...
+  call npm install sqlite3 --build-from-source --force
   IF !ERRORLEVEL! NEQ 0 goto error
   
   popd

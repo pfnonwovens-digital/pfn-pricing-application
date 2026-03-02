@@ -1,0 +1,6 @@
+{
+  "version": "1.0",
+  "buildCommand": "npm install && npm rebuild sqlite3 --build-from-source || npm install sqlite3 --force",
+  "outputPath": ".",
+  "defaultNodeVersion": "18-lts"
+}
