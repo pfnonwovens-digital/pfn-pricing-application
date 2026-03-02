@@ -292,7 +292,10 @@
     <div class="editor-container">
       <div class="editor-header">
         <h1>Product Data Editor</h1>
-        <button class="back-link" onclick="window.location.href='index.html'">← Back to Dashboard</button>
+        <div style="display: flex; gap: 10px;">
+          <button class="back-link" onclick="window.location.href='/dashboard'">← Back to Dashboard</button>
+          <button class="logout-btn" onclick="logoutHandler()">Logout</button>
+        </div>
       </div>
 
       <div class="search-box">
@@ -983,6 +986,22 @@
         });
       }
     });
+
+    // Auth and logout functions
+    function logoutHandler() {
+      if (typeof auth !== 'undefined') {
+        auth.logout();
+      }
+    }
+
+    window.addEventListener('load', () => {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        window.location.href = '/';
+      }
+    });
   </script>
+
+  <script src="auth.js"></script>
 </body>
 </html>

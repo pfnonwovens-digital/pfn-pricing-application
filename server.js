@@ -22,8 +22,37 @@ auth.initializeDatabase().catch(err => {
   process.exit(1);
 });
 
-// Serve frontend files
-app.use(express.static(path.join(__dirname, "src", "frontend")));
+// ==================== FRONTEND ROUTING WITH AUTHENTICATION ====================
+
+// Public files (CSS, JS, auth pages) - no authentication needed
+app.use(express.static(path.join(__dirname, "src", "frontend"), {
+  setHeaders: (res, path) => {
+    // Only allow public access to these files
+    if (path.endsWith('.css') || path.endsWith('.js') || 
+        path.endsWith('login.html') || path.endsWith('auth.js')) {
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    }
+  }
+}));
+
+// Root route - serve login page
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "src", "frontend", "login.html"));
+});
+
+// Protected routes - require authentication
+const protectedRoutes = [
+  { path: "/dashboard", file: "index.html" },
+  { path: "/bom-calculator", file: "bom-calculator.html" },
+  { path: "/products", file: "products-editor.html" }
+];
+
+protectedRoutes.forEach(route => {
+  app.get(route.path, auth.authMiddleware, (req, res) => {
+    res.sendFile(path.join(__dirname, "src", "frontend", route.file));
+  });
+});
+
 // Serve data files (e.g., PFN_logo.png) from /data
 app.use('/data', express.static(path.join(__dirname, 'data')));
 

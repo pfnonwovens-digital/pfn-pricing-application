@@ -15,7 +15,10 @@
         <h1>Manufacturing Cost ERP Dashboard</h1>
         <p class="subtitle">Product costing, materials, and line analysis</p>
       </div>
-      <img src="/data/PFN_logo.png" alt="PFNonwovens" class="company-logo company-logo-right" />
+      <div class="header-right">
+        <button id="logoutBtn" class="logout-btn" title="Logout">Logout</button>
+        <img src="/data/PFN_logo.png" alt="PFNonwovens" class="company-logo company-logo-right" />
+      </div>
     </header>
 
     <!-- CONTROL PANEL -->
@@ -42,8 +45,8 @@
         </div>
 
         <div class="control-buttons">
-          <button onclick="window.location.href='products-editor.html'" class="btn-secondary" title="Edit product data">Edit Products</button>
-          <button onclick="window.location.href='bom-calculator.html'" class="btn-secondary" title="BOM Design Calculator">BOM Calculator</button>
+          <button onclick="window.location.href='/products'" class="btn-secondary" title="Edit product data">Edit Products</button>
+          <button onclick="window.location.href='/bom-calculator'" class="btn-secondary" title="BOM Design Calculator">BOM Calculator</button>
           <button id="compactToggle" class="btn-secondary compact-toggle" title="Toggle compact view">Compact</button>
         </div>
       </div>
@@ -192,6 +195,21 @@
     <div id="errorMessage" class="error-message" style="display: none;"></div>
   </div>
 
-  <script src="script.js"></script>
+  <script src="auth.js"></script>
+  <script>
+    // Logout functionality
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      auth.logout();
+    });
+
+    // Check if user is authenticated on page load
+    window.addEventListener('load', () => {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        // Not logged in, redirect to login
+        window.location.href = '/';
+      }
+    });
+  </script>  <script src="script.js"></script>
 </body>
 </html>

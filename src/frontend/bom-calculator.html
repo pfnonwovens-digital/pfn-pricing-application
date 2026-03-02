@@ -677,7 +677,10 @@
   <div class="container calculator-container">
     <header class="calculator-header">
       <h1>BOM Calculator</h1>
-      <button class="back-link" onclick="window.location.href='index.html'">← Back to Dashboard</button>
+      <div style="display: flex; gap: 10px;">
+        <button class="back-link" onclick="window.location.href='/dashboard'">← Back to Dashboard</button>
+        <button class="logout-btn" onclick="logoutHandler()">Logout</button>
+      </div>
     </header>
 
     <!-- Toolbar for Save/Load Actions -->
@@ -3321,7 +3324,23 @@
       input.click();
     }
 
+    // Auth and logout functions
+    function logoutHandler() {
+      if (typeof auth !== 'undefined') {
+        auth.logout();
+      }
+    }
+
+    window.addEventListener('load', () => {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        window.location.href = '/';
+      }
+    });
+
   </script>
+
+  <script src="auth.js"></script>
 
   <!-- Save Modal -->
   <div id="saveModal" class="modal-overlay">

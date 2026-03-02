@@ -228,7 +228,7 @@
 
                     // Redirect to dashboard
                     setTimeout(() => {
-                        window.location.href = 'index.html';
+                        window.location.href = '/dashboard';
                     }, 500);
                 } else {
                     throw new Error(result.error || 'Login failed');
@@ -255,7 +255,7 @@
             const token = localStorage.getItem('authToken');
             if (token) {
                 // Already logged in, redirect to dashboard
-                window.location.href = 'index.html';
+                window.location.href = '/dashboard';
             }
         });
     </script>
