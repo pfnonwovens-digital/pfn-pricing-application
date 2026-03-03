@@ -1520,9 +1520,25 @@
 
                 if (response.ok) {
                     const select = document.getElementById('auditFilterUser');
+                    const users = Array.isArray(data)
+                        ? data
+                        : (Array.isArray(data.users) ? data.users : []);
+
+                    const groupedUsers = users
+                        .filter(user => {
+                            if (Array.isArray(user.group_ids)) {
+                                return user.group_ids.length > 0;
+                            }
+                            if (Array.isArray(user.groups)) {
+                                return user.groups.length > 0;
+                            }
+                            return true;
+                        })
+                        .sort((a, b) => String(a.email || '').localeCompare(String(b.email || '')));
+
                     select.innerHTML = '<option value="">All Users</option>' +
-                        data.users.map(user => 
-                            `<option value="${user.id}">${escapeHtml(user.email)}</option>`
+                        groupedUsers.map(user =>
+                            `<option value="${user.id}">${escapeHtml(user.email || user.name || user.id)}</option>`
                         ).join('');
                 }
             } catch (err) {
