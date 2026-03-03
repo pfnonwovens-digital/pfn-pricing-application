@@ -118,6 +118,231 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ---
 
+## Admin Endpoints
+
+All admin endpoints require authentication and the `user:manage` permission.
+
+### POST /admin/users
+Create a new user account.
+
+**Required Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Required Permission:** `user:manage`
+
+**Request Body:**
+```json
+{
+  "email": "newuser@pfnonwovens.com",
+  "name": "New User",
+  "password": "TempPass123",
+  "role": "viewer"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "userId": "def456789"
+}
+```
+
+**Status Codes:**
+- 200 OK
+- 401 Unauthorized (missing or invalid token)
+- 403 Forbidden (insufficient permissions)
+- 500 Internal Server Error
+
+---
+
+### PUT /admin/users/:userId
+Update user information (email, name, password).
+
+**Required Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Required Permission:** `user:manage`
+
+**Request Body:**
+```json
+{
+  "email": "updated@pfnonwovens.com",
+  "name": "Updated Name",
+  "password": "NewPassword123"
+}
+```
+
+**Note:** Password is optional. If omitted, the current password is retained.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "User updated successfully"
+}
+```
+
+**Status Codes:**
+- 200 OK
+- 401 Unauthorized (missing or invalid token)
+- 403 Forbidden (insufficient permissions)
+- 404 Not Found (user does not exist)
+- 500 Internal Server Error
+
+---
+
+### DELETE /admin/users/:userId/groups/:groupId
+Remove a user from a specific group.
+
+**Required Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Required Permission:** `user:manage`
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "User removed from group"
+}
+```
+
+**Status Codes:**
+- 200 OK
+- 401 Unauthorized (missing or invalid token)
+- 403 Forbidden (insufficient permissions)
+- 404 Not Found (user or group does not exist)
+- 500 Internal Server Error
+
+---
+
+### GET /admin/audit-logs
+Retrieve audit logs with filtering options.
+
+**Required Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Required Permission:** `user:manage`
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `userId` | string | No | null | Filter by specific user ID |
+| `action` | string | No | null | Filter by action type |
+| `startDate` | string | No | null | Start date (YYYY-MM-DD) |
+| `endDate` | string | No | null | End date (YYYY-MM-DD) |
+| `search` | string | No | null | Search term for log details |
+
+**Action Types:**
+- `login` - Successful login
+- `logout` - User logout
+- `login_failed` - Failed login attempt
+- `password_change` - Password changed
+- `password_reset_request` - Password reset requested
+- `user_created` - New user account created
+- `user_updated` - User information updated
+- `user_deleted` - User account deleted
+- `access_request_approved` - Access request approved
+- `access_request_denied` - Access request denied
+
+**Example Requests:**
+
+```bash
+# Get all audit logs
+GET /admin/audit-logs
+
+# Filter by user
+GET /admin/audit-logs?userId=abc123
+
+# Filter by action type
+GET /admin/audit-logs?action=login
+
+# Filter by date range
+GET /admin/audit-logs?startDate=2026-03-01&endDate=2026-03-02
+
+# Search logs
+GET /admin/audit-logs?search=failed
+
+# Combined filters
+GET /admin/audit-logs?userId=abc123&action=login&startDate=2026-03-01
+```
+
+**Response (200):**
+```json
+{
+  "logs": [
+    {
+      "id": 1,
+      "user_id": "abc123",
+      "user_email": "user@pfnonwovens.com",
+      "action": "login",
+      "details": "Successful login",
+      "ip_address": "192.168.1.1",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
+      "created_at": "2026-03-02 10:30:00"
+    },
+    {
+      "id": 2,
+      "user_id": "abc123",
+      "user_email": "user@pfnonwovens.com",
+      "action": "password_change",
+      "details": "Password changed successfully",
+      "ip_address": "192.168.1.1",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
+      "created_at": "2026-03-02 11:15:00"
+    }
+  ]
+}
+```
+
+**Status Codes:**
+- 200 OK
+- 401 Unauthorized (missing or invalid token)
+- 403 Forbidden (insufficient permissions)
+- 500 Internal Server Error
+
+---
+
+### GET /admin/audit-logs/stats
+Get audit log statistics.
+
+**Required Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Required Permission:** `user:manage`
+
+**Response (200):**
+```json
+{
+  "stats": {
+    "total_logs": 1523,
+    "unique_users": 45,
+    "unique_actions": 12,
+    "last_activity": "2026-03-02 15:45:30"
+  }
+}
+```
+
+**Status Codes:**
+- 200 OK
+- 401 Unauthorized (missing or invalid token)
+- 403 Forbidden (insufficient permissions)
+- 500 Internal Server Error
+
+---
+
 ## Using the API with Authentication
 
 ## Response Format
@@ -794,4 +1019,4 @@ Invoke-RestMethod -Uri "http://localhost:3000/api/auth/logout" `
 ---
 
 **API Version:** 1.0  
-**Last Updated:** February 4, 2026
+**Last Updated:** March 2, 2026

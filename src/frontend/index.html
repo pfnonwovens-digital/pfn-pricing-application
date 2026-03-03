@@ -10,15 +10,18 @@
 
   <div class="container">
     <header>
-      <img src="/data/PFN_logo.png" alt="PFNonwovens" class="company-logo" />
-      <div>
-        <h1>Manufacturing Cost ERP Dashboard</h1>
-        <p class="subtitle">Product costing, materials, and line analysis</p>
+      <div class="header-logo-text-group">
+        <img src="/data/PFN_logo.png" alt="PFNonwovens" class="company-logo" />
+        <div class="header-center">
+          <h1>Manufacturing Cost ERP Dashboard</h1>
+          <p class="subtitle">Product costing, materials, and line analysis</p>
+        </div>
+        <img src="/data/PFN_logo.png" alt="PFNonwovens" class="company-logo company-logo-right" />
       </div>
       <div class="header-right">
-        <button id="adminBtn" class="logout-btn" title="Admin Panel" style="display: none; margin-right: 10px; background-color: #ff9800;">Admin</button>
-        <button id="logoutBtn" class="logout-btn" title="Logout">Logout</button>
-        <img src="/data/PFN_logo.png" alt="PFNonwovens" class="company-logo company-logo-right" />
+        <button id="changePasswordBtn" class="logout-btn" title="Change Password" style="display: none; margin-right: 10px; background-color: #667eea;" onclick="openChangePasswordModal()">Change Password</button>
+        <button id="adminBtn" class="logout-btn" title="Admin Panel" style="display: none; margin-right: 10px; background-color: #ff9800;" onclick="window.location.href='/admin-access.html'">Admin</button>
+        <button id="logoutBtn" class="logout-btn" title="Logout" onclick="auth.logout()">Logout</button>
       </div>
     </header>
 
@@ -194,47 +197,222 @@
 
     <!-- ERROR MESSAGE -->
     <div id="errorMessage" class="error-message" style="display: none;"></div>
+
+    <!-- CHANGE PASSWORD MODAL -->
+    <div id="changePasswordModal" class="modal" style="display: none;">
+      <div class="modal-content" style="max-width: 400px; margin-top: 15%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h2 style="margin: 0;">Change Password</h2>
+          <button onclick="closeChangePasswordModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999;">×</button>
+        </div>
+        <div style="margin-bottom: 20px;">
+          <div style="margin-bottom: 15px;">
+            <label for="currentPassword" style="display: block; margin-bottom: 5px; font-weight: bold;">Current Password</label>
+            <input type="password" id="currentPassword" placeholder="Enter current password" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+          </div>
+          <div style="margin-bottom: 15px;">
+            <label for="newPassword" style="display: block; margin-bottom: 5px; font-weight: bold;">New Password</label>
+            <input type="password" id="newPassword" placeholder="Enter new password" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+          </div>
+          <div style="margin-bottom: 15px;">
+            <label for="confirmPassword" style="display: block; margin-bottom: 5px; font-weight: bold;">Confirm Password</label>
+            <input type="password" id="confirmPassword" placeholder="Confirm new password" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+          <button onclick="closeChangePasswordModal()" style="padding: 10px 20px; background-color: #f5f5f5; color: #333; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-weight: bold;">Cancel</button>
+          <button onclick="confirmChangePassword()" style="padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Change Password</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="auth.js"></script>
   <script>
-    // Logout functionality
-    document.getElementById('logoutBtn').addEventListener('click', () => {
-      auth.logout();
-    });
+    // Change password modal functions
+    function openChangePasswordModal() {
+      console.log('[openChangePasswordModal] Called');
+      const modal = document.getElementById('changePasswordModal');
+      console.log('[openChangePasswordModal] Modal element:', modal);
+      if (modal) {
+        modal.style.display = 'block';
+        const currentPwdInput = document.getElementById('currentPassword');
+        const newPwdInput = document.getElementById('newPassword');
+        const confirmPwdInput = document.getElementById('confirmPassword');
+        
+        if (currentPwdInput) currentPwdInput.value = '';
+        if (newPwdInput) newPwdInput.value = '';
+        if (confirmPwdInput) confirmPwdInput.value = '';
+        if (currentPwdInput) currentPwdInput.focus();
+        
+        console.log('[openChangePasswordModal] Modal opened successfully');
+      } else {
+        console.error('[openChangePasswordModal] Modal element not found');
+      }
+    }
 
-    // Admin button - show for admin users
-    document.getElementById('adminBtn').addEventListener('click', () => {
-      window.location.href = '/admin-access.html';
-    });
+    function closeChangePasswordModal() {
+      console.log('[closeChangePasswordModal] Called');
+      const modal = document.getElementById('changePasswordModal');
+      if (modal) {
+        modal.style.display = 'none';
+        console.log('[closeChangePasswordModal] Modal closed');
+      }
+    }
+
+    async function confirmChangePassword() {
+      const currentPassword = document.getElementById('currentPassword').value;
+      const newPassword = document.getElementById('newPassword').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      const token = localStorage.getItem('authToken');
+
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        alert('All fields are required');
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        alert('New passwords do not match');
+        return;
+      }
+
+      if (newPassword.length < 6) {
+        alert('New password must be at least 6 characters');
+        return;
+      }
+
+      if (currentPassword === newPassword) {
+        alert('New password must be different from current password');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            currentPassword,
+            newPassword
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          alert('Password changed successfully');
+          closeChangePasswordModal();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to change password'));
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+      const modal = document.getElementById('changePasswordModal');
+      if (modal && event.target === modal) {
+        closeChangePasswordModal();
+      }
+    };
+
+    // Setup all button and event listeners
+    function setupEventListeners() {
+      // Logout functionality
+      const logoutBtn = document.getElementById('logoutBtn');
+      if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+          auth.logout();
+        });
+      }
+
+      // Change password button
+      const changePasswordBtn = document.getElementById('changePasswordBtn');
+      if (changePasswordBtn) {
+        changePasswordBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          openChangePasswordModal();
+        });
+      }
+
+      // Admin button - show for admin users
+      const adminBtn = document.getElementById('adminBtn');
+      if (adminBtn) {
+        adminBtn.addEventListener('click', () => {
+          window.location.href = '/admin-access.html';
+        });
+      }
+    }
 
     // Check if user is authenticated on page load and show admin button if in Admin group
-    window.addEventListener('load', async () => {
+    function checkUserGroups() {
       const token = localStorage.getItem('authToken');
       if (!token) {
         // Not logged in, redirect to login
         window.location.href = '/';
       } else {
         // Check if user is in Admin group
-        try {
-          const response = await fetch('/api/auth/me/groups', {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
+        fetch('/api/auth/me/groups', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+        .then(response => {
           if (response.ok) {
-            const groups = await response.json();
-            // Check if user is in Admin group
-            const isAdmin = groups.some(group => group.name === 'Admin');
-            if (isAdmin) {
-              document.getElementById('adminBtn').style.display = 'block';
+            return response.json();
+          }
+          throw new Error('Failed to get user groups');
+        })
+        .then(groups => {
+          // Check if user is in Admin group
+          const isAdmin = groups.some(group => group.name === 'Admin');
+          if (isAdmin) {
+            const adminBtn = document.getElementById('adminBtn');
+            if (adminBtn) {
+              adminBtn.style.display = 'block';
             }
           }
-        } catch (err) {
+
+          // Show Change Password button if user is NOT in Test Group
+          const isTestGroup = groups.some(group => group.name === 'Test Group');
+          if (!isTestGroup) {
+            const changePasswordBtn = document.getElementById('changePasswordBtn');
+            if (changePasswordBtn) {
+              changePasswordBtn.style.display = 'block';
+            }
+          }
+        })
+        .catch(err => {
           console.warn('Could not check user groups:', err);
-        }
+        });
       }
-    });
-  </script>  <script src="script.js"></script>
+    }
+
+    // Initialize when DOM is ready
+    console.log('[Init] Current readyState:', document.readyState);
+    
+    function initializeApp() {
+      console.log('[initializeApp] Initializing application');
+      setupEventListeners();
+      checkUserGroups();
+      console.log('[initializeApp] Application initialized');
+    }
+    
+    if (document.readyState === 'loading') {
+      console.log('[Init] DOM still loading, waiting for DOMContentLoaded');
+      document.addEventListener('DOMContentLoaded', function() {
+        console.log('[Init] DOMContentLoaded fired');
+        initializeApp();
+      });
+    } else {
+      console.log('[Init] DOM already loaded, initializing immediately');
+      initializeApp();
+    }
+  </script>
+  <script src="script.js"></script>
 </body>
 </html>

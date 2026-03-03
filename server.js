@@ -126,10 +126,13 @@ app.get("/api/auth/me", auth.authMiddleware, async (req, res) => {
 
 // Get current user's groups
 app.get("/api/auth/me/groups", auth.authMiddleware, async (req, res) => {
+  console.log(`[DEBUG] GET /api/auth/me/groups called for user: ${req.user.email}`);
   try {
     const groups = await auth.getUserGroups(req.user.id);
+    console.log(`[DEBUG] Found ${groups.length} groups for ${req.user.email}`);
     res.json(groups);
   } catch (err) {
+    console.error(`[ERROR] /api/auth/me/groups error:`, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -140,6 +143,32 @@ app.post("/api/auth/logout", auth.authMiddleware, async (req, res) => {
     await auth.auditLog(req.user.id, 'LOGOUT', 'auth', {});
 
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Change password endpoint
+app.post("/api/auth/change-password", auth.authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    const result = await auth.changePassword(req.user.id, currentPassword, newPassword);
+    
+    if (result.success) {
+      await auth.auditLog(req.user.id, 'CHANGE_PASSWORD', 'user', { email: req.user.email });
+      res.json({ success: true, message: 'Password changed successfully' });
+    } else {
+      res.status(401).json({ error: result.error });
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -283,6 +312,21 @@ app.post("/api/admin/users", auth.authMiddleware, auth.requirePermission('user:m
   }
 });
 
+// Update user (admin only)
+app.put("/api/admin/users/:userId", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const { email, fullName, password } = req.body;
+    const user = await auth.updateUser(req.params.userId, email, fullName, password);
+    res.json({
+      success: true,
+      message: 'User updated successfully.',
+      user
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // Remove user from group (admin only)
 app.delete("/api/admin/users/:userId/groups/:groupId", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
   try {
@@ -294,6 +338,42 @@ app.delete("/api/admin/users/:userId/groups/:groupId", auth.authMiddleware, auth
     });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Get audit logs (admin only)
+app.get("/api/admin/audit-logs", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const filters = {
+      userId: req.query.userId,
+      action: req.query.action,
+      resource: req.query.resource,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      search: req.query.search,
+      limit: req.query.limit ? parseInt(req.query.limit) : 100
+    };
+    
+    const logs = await auth.getAuditLogs(filters);
+    res.json({
+      success: true,
+      logs
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get audit log stats (admin only)
+app.get("/api/admin/audit-logs/stats", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const stats = await auth.getAuditLogStats();
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

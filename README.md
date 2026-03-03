@@ -512,10 +512,52 @@ curl http://localhost:3000/api/debug/fx
 
 **For Admins Managing Requests:**
 1. Visit `/admin-access.html` (button visible on dashboard for admin users)
-2. Review pending access requests
-3. Approve request → User account created with temporary password
-4. Or deny request with optional reason
-5. View approved and denied requests by filtering
+2. Use the three-tab interface to manage access, groups, and audit logs
+
+### Admin Dashboard Features
+
+The admin dashboard includes three main tabs:
+
+#### 1. Access Requests Tab
+- **View Requests**: See all pending, approved, and denied access requests
+- **Approve Access**: Approve requests to automatically create user accounts with temporary passwords
+- **Deny Access**: Deny requests with optional reason
+- **Filter by Status**: Filter requests by pending/approved/denied status
+- **Request Details**: View requester email, full name, reason, and timestamps
+
+#### 2. Groups Tab
+- **View Groups**: See all user groups and their members
+- **Group Details**: View group name, description, permissions, and member count
+- **Edit Users**: Modify user email, name, and password directly from group view
+- **Remove Users**: Remove users from specific groups
+- **Member Management**: See complete list of group members with their details
+
+#### 3. Audit Logs Tab
+- **Comprehensive Filtering:**
+  - **User Filter**: Dropdown to filter by specific user
+  - **Action Filter**: Filter by action type (login, logout, password_change, etc.)
+  - **Date Range**: Filter logs by start and end date
+  - **Text Search**: Search across log details with debounced input (300ms delay)
+- **Export to CSV**: Download filtered audit logs for offline analysis and compliance reporting
+- **Real-time Statistics**: View:
+  - Total log count
+  - Unique users tracked
+  - Number of unique action types
+  - Timestamp of last activity
+- **Refresh Button**: Manually reload audit logs
+- **Detailed Log View**: See user email, action, details, IP address, user agent, and timestamp
+
+**Audit Log Actions Tracked:**
+- `login` - Successful login
+- `logout` - User logout
+- `login_failed` - Failed login attempt
+- `password_change` - Password changed
+- `password_reset_request` - Password reset requested
+- `user_created` - New user account created
+- `user_updated` - User information updated
+- `user_deleted` - User account deleted
+- `access_request_approved` - Access request approved
+- `access_request_denied` - Access request denied
 
 ### Database Schema
 
@@ -565,6 +607,26 @@ curl http://localhost:3000/api/debug/fx
 - `POST /api/admin/groups` - Create group
   - Body: `{ name, description, permissions }`
   - Returns: Created group
+
+- `POST /api/admin/users` - Create new user account
+  - Body: `{ email, name, password, role }`
+  - Returns: User ID
+
+- `PUT /api/admin/users/:userId` - Update user information
+  - Body: `{ email, name, password }` (password optional)
+  - Returns: Success confirmation
+
+- `DELETE /api/admin/users/:userId/groups/:groupId` - Remove user from group
+  - Returns: Success confirmation
+
+- `GET /api/admin/audit-logs` - Get audit logs with filtering
+  - Query params: `userId`, `action`, `startDate`, `endDate`, `search`
+  - Returns: Array of audit log entries
+
+- `GET /api/admin/audit-logs/stats` - Get audit log statistics
+  - Returns: Total logs, unique users, unique actions, last activity
+
+**Note:** Full API documentation available in [API.md](API.md)
 
 ## Future Enhancements
 
@@ -619,6 +681,87 @@ curl http://localhost:3000/api/debug/fx
 
 **Why this works**: The rebuild command recompiles sqlite3 native binaries in Azure's specific Node.js environment, ensuring compatibility.
 
+### Change Password Button Not Working
+
+**Symptoms**: The "Change Password" button on the dashboard is not responding to clicks.
+
+**Root Causes & Fixes**:
+
+1. **Missing Modal CSS Styling**
+   - **Problem**: The modal HTML had `style="display: none"` but there was no `.modal` CSS class styling to properly format it as an overlay modal.
+   - **Solution**: Added complete modal CSS to `styles.css` with fixed positioning, z-index: 1000, and semi-transparent overlay (rgba(0,0,0,0.5)).
+
+2. **Event Listener Timing Issues**
+   - **Problem**: Event listeners were being attached before the DOM was fully loaded, which could cause the click handler to fail.
+   - **Solution**: Refactored JavaScript to use `DOMContentLoaded` event, wrapped event listener setup in `setupEventListeners()` function, added null checks for all DOM elements before attaching listeners, and used `readyState` check to handle already-loaded pages.
+
+3. **Missing Error Handling**
+   - **Problem**: The original code didn't handle cases where elements might not exist or fetch calls might fail gracefully.
+   - **Solution**: Added null checks for all `document.getElementById()` calls, try-catch blocks around fetch operations, and more descriptive error messages.
+
+**Verification**:
+- Run `node test-change-password-button.js` to verify functionality
+- Check that modal opens with proper overlay styling
+- Verify form validation works (passwords must match, ≥6 chars)
+- Confirm password change succeeds and audit log is created
+
+## Recent Implementation Notes
+
+### Admin Page Compact Layout
+
+**File Modified**: `src/frontend/admin-access.html`
+
+**Changes Made**:
+- Reduced `.admin-container` padding: 20px → 12px
+- Reduced `.header` padding: 20px → 12px, margin-bottom: 30px → 15px
+- Reduced `.tabs` gap: 10px → 8px, margin-bottom: 20px → 12px
+- Reduced `.tab` padding: 10px 20px → 8px 15px, font-size: 16px → 14px
+- Reduced `.tab-content` padding: 20px → 12px
+- Reduced `.alert` padding: 15px → 10px, margin-bottom: 20px → 12px
+- Reduced table cells padding: 12px → 8px
+- Reduced `.form-group` margin: 15px → 10px
+- Reduced `.groups-container` gap: 20px → 12px
+- Reduced `.group-card` padding: 20px → 12px
+- Reduced `.group-header` margin-bottom: 20px → 12px, padding-bottom: 15px → 10px
+
+**Result**: Admin page is now ~30% more compact while maintaining proper spacing and readability.
+
+### Change Password Feature
+
+**Frontend Changes** (`src/frontend/index.html`):
+1. Added "Change Password" button to dashboard header (purple/blue #667eea)
+2. Added password change modal with Current Password, New Password, and Confirm Password fields
+3. Added JavaScript functions: `openChangePasswordModal()`, `closeChangePasswordModal()`, `confirmChangePassword()`
+4. Validates passwords match and are ≥6 characters
+5. Button visibility: Shows for all authenticated users EXCEPT those in "Test Group"
+
+**Backend Changes**:
+1. `server.js`: Added `POST /api/auth/change-password` endpoint (requires authMiddleware)
+2. `src/backend/auth.js`: Added `changePassword()` function that:
+   - Retrieves user by ID
+   - Verifies current password against stored hash
+   - Hashes new password and updates database
+   - Logs audit event
+   - Returns success/error response
+
+**Test Results**: All tests passing ✅
+- Admin login works
+- Rejects wrong current password (401)
+- Changes password with correct current password
+- Old password invalidated after change
+- New password allows login
+- Password can be changed multiple times
+- Modal opens and closes properly
+- Form validation works
+- Group membership check works
+
+**Files Modified**:
+1. `src/frontend/admin-access.html` - Compact CSS spacing
+2. `src/frontend/index.html` - Change Password button, modal, logic
+3. `src/frontend/styles.css` - Modal CSS styling
+4. `server.js` - New POST /api/auth/change-password endpoint
+5. `src/backend/auth.js` - New changePassword() function
+
 ## Support
 
 For issues or questions:
@@ -633,5 +776,5 @@ Proprietary - PFNonwovens LLC
 
 ---
 
-**Last Updated:** February 4, 2026
+**Last Updated:** March 2, 2026
 **Version:** 1.0

@@ -153,6 +153,7 @@ function updateTableScrollerWidth() {
 
 // Load costs based on current filters
 async function loadCosts() {
+  console.log('[loadCosts] Function called');
   const currency = document.getElementById("currencySelect").value;
   const sapIds = getSelectValues("filterSapId");
   const pfnIds = getSelectValues("filterPfnId");
@@ -192,6 +193,7 @@ async function loadCosts() {
     lineIds.forEach(v => params.append("lineId", v));
     countries.forEach(v => params.append("country", v));
 
+    console.log('[loadCosts] Fetching data from API...');
     const res = await fetch(`/api/costs?${params.toString()}`);
     
     if (!res.ok) {
@@ -199,9 +201,12 @@ async function loadCosts() {
     }
 
     const data = await res.json();
+    console.log('[loadCosts] Data received:', data.length, 'records');
     currentData = data;
     
+    console.log('[loadCosts] Calling updateSummaryStats...');
     updateSummaryStats(data);
+    console.log('[loadCosts] Calling renderView...');
     renderView();
 
   } catch (err) {
@@ -296,23 +301,31 @@ function clearFilters() {
 
 // Update summary statistics
 function updateSummaryStats(data) {
+  console.log('[updateSummaryStats] Called with data length:', data.length);
   const statsSection = document.getElementById("summaryStats");
+  console.log('[updateSummaryStats] Stats section element:', statsSection);
   
   if (data.length === 0) {
+    console.log('[updateSummaryStats] No data, hiding stats section');
     statsSection.style.display = "none";
     return;
   }
 
+  console.log('[updateSummaryStats] Setting display to grid');
   statsSection.style.display = "grid";
 
   const avgMaterial = data.reduce((sum, item) => sum + (item.materialCostNet ?? item.materialCost ?? 0), 0) / data.length;
   const avgProcess = data.reduce((sum, item) => sum + item.processCost, 0) / data.length;
   const avgTotal = data.reduce((sum, item) => sum + item.totalCost, 0) / data.length;
 
+  console.log('[updateSummaryStats] Calculated stats:', { avgMaterial, avgProcess, avgTotal });
+
   document.getElementById("statRecords").textContent = data.length;
   document.getElementById("statAvgMaterial").textContent = avgMaterial.toFixed(4) + " " + currentCurrency;
   document.getElementById("statAvgProcess").textContent = avgProcess.toFixed(4) + " " + currentCurrency;
   document.getElementById("statAvgTotal").textContent = avgTotal.toFixed(4) + " " + currentCurrency;
+  
+  console.log('[updateSummaryStats] Stats updated successfully');
 }
 // Update filter options based on current filtered data (cascading filters)
 function updateFilterOptions() {

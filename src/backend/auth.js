@@ -629,7 +629,7 @@ async function createDirectUser(email, fullName, password, groupId = null) {
 
   // Create user with viewer role by default
   const result = await dbRun(
-    'INSERT INTO users (id, email, name, password, role, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO users (id, email, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     [userId, email, fullName, hashedPassword, 'viewer', new Date().toISOString()]
   );
 
@@ -642,7 +642,7 @@ async function createDirectUser(email, fullName, password, groupId = null) {
   }
 
   // Log audit event
-  await auditLog('user_created', `Created user: ${email} (${fullName})`, userId);
+  await auditLog(userId, 'user_created', 'users', { email, name: fullName });
 
   return {
     id: userId,
@@ -651,6 +651,193 @@ async function createDirectUser(email, fullName, password, groupId = null) {
     role: 'viewer',
     groupId: groupId || null
   };
+}
+
+async function updateUser(userId, email, fullName, password = null) {
+  // Check if user exists
+  const user = await dbGet('SELECT id, email FROM users WHERE id = ?', [userId]);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  // Validate email format
+  if (email && !email.includes('@')) {
+    throw new Error('Invalid email address');
+  }
+
+  // Check if new email is already in use by another user
+  if (email && email !== user.email) {
+    const existing = await dbGet('SELECT id FROM users WHERE email = ? AND id != ?', [email, userId]);
+    if (existing) {
+      throw new Error('Email already in use');
+    }
+  }
+
+  // Prepare update query and values
+  let updateQuery = 'UPDATE users SET ';
+  let updateFields = [];
+  let updateValues = [];
+
+  if (email) {
+    updateFields.push('email = ?');
+    updateValues.push(email);
+  }
+
+  if (fullName) {
+    updateFields.push('name = ?');
+    updateValues.push(fullName);
+  }
+
+  if (password) {
+    const hashedPassword = await hashPassword(password);
+    updateFields.push('password_hash = ?');
+    updateValues.push(hashedPassword);
+  }
+
+  // Add user ID to the values array
+  updateValues.push(userId);
+
+  updateQuery += updateFields.join(', ') + ' WHERE id = ?';
+
+  // Execute update
+  await dbRun(updateQuery, updateValues);
+
+  // Log audit event
+  await auditLog(userId, 'user_updated', 'users', { email, name: fullName });
+
+  return {
+    id: userId,
+    email,
+    name: fullName
+  };
+}
+
+// ==================== PASSWORD CHANGE ====================
+
+async function changePassword(userId, currentPassword, newPassword) {
+  try {
+    // Get user's current password hash
+    const user = await dbGet('SELECT id, email, password_hash FROM users WHERE id = ?', [userId]);
+    
+    if (!user) {
+      return { success: false, error: 'User not found' };
+    }
+
+    // Verify current password
+    const isValid = await verifyPassword(currentPassword, user.password_hash);
+    if (!isValid) {
+      return { success: false, error: 'Current password is incorrect' };
+    }
+
+    // Hash new password
+    const newHash = await hashPassword(newPassword);
+
+    // Update password in database
+    await dbRun('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, userId]);
+
+    // Log the change
+    await auditLog(userId, 'CHANGE_PASSWORD', 'users', { email: user.email });
+
+    return { success: true, message: 'Password changed successfully' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+// ==================== AUDIT LOGS VIEWER ====================
+
+async function getAuditLogs(filters = {}) {
+  try {
+    let query = `
+      SELECT 
+        al.id,
+        al.timestamp,
+        al.action,
+        al.resource,
+        al.details,
+        al.user_id,
+        u.email as user_email,
+        u.name as user_name
+      FROM audit_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    // Filter by user ID
+    if (filters.userId) {
+      query += ' AND al.user_id = ?';
+      params.push(filters.userId);
+    }
+    
+    // Filter by action
+    if (filters.action) {
+      query += ' AND al.action = ?';
+      params.push(filters.action);
+    }
+    
+    // Filter by resource
+    if (filters.resource) {
+      query += ' AND al.resource = ?';
+      params.push(filters.resource);
+    }
+    
+    // Filter by date range
+    if (filters.startDate) {
+      query += ' AND al.timestamp >= ?';
+      params.push(filters.startDate);
+    }
+    
+    if (filters.endDate) {
+      query += ' AND al.timestamp <= ?';
+      params.push(filters.endDate);
+    }
+    
+    // Search in details
+    if (filters.search) {
+      query += ' AND (al.details LIKE ? OR u.email LIKE ? OR al.action LIKE ?)';
+      const searchTerm = `%${filters.search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+    
+    // Order by timestamp descending
+    query += ' ORDER BY al.timestamp DESC';
+    
+    // Limit results
+    const limit = filters.limit || 100;
+    query += ' LIMIT ?';
+    params.push(limit);
+    
+    const logs = await dbAll(query, params);
+    
+    // Parse JSON details for each log
+    return logs.map(log => ({
+      ...log,
+      details: log.details ? JSON.parse(log.details) : {}
+    }));
+  } catch (err) {
+    console.error('Error fetching audit logs:', err);
+    throw err;
+  }
+}
+
+async function getAuditLogStats() {
+  try {
+    const stats = await dbGet(`
+      SELECT 
+        COUNT(*) as total_logs,
+        COUNT(DISTINCT user_id) as unique_users,
+        COUNT(DISTINCT action) as unique_actions,
+        MAX(timestamp) as last_activity
+      FROM audit_logs
+    `);
+    
+    return stats;
+  } catch (err) {
+    console.error('Error fetching audit log stats:', err);
+    throw err;
+  }
 }
 
 // ==================== EXPORTS ====================
@@ -690,6 +877,12 @@ module.exports = {
   deleteGroup,
   getUsersInGroup,
   createDirectUser,
+  updateUser,
+  changePassword,
+
+  // Audit logs
+  getAuditLogs,
+  getAuditLogStats,
 
   // Utilities
   auditLog,
