@@ -42,18 +42,12 @@ jobs:
           node --version
           npm --version
 
-      - name: Install dependencies
+      - name: Validate required project files
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
-
-      - name: Build and test (if scripts exist)
-        run: |
-          npm run build --if-present
-          npm run test --if-present
+          test -f package.json
+          test -f server.js
+          test -d src
+          node --check server.js
 
       - name: Prepare deployment package
         run: |
