@@ -1764,8 +1764,8 @@
       } else {
         document.getElementById('lineWidth').value = '';
       }
-      if (params.width !== undefined && params.width !== null && params.width !== '') {
-        const adjustedWidth = parseFloat(params.width) - 0.1;
+      if (params.sbEffectiveWidth !== undefined && params.sbEffectiveWidth !== null && params.sbEffectiveWidth !== '') {
+        const adjustedWidth = parseFloat(params.sbEffectiveWidth) - 0.1;
         document.getElementById('adjustedEffectiveWidth').value = isNaN(adjustedWidth) ? '' : adjustedWidth.toFixed(1);
       } else {
         document.getElementById('adjustedEffectiveWidth').value = '';
