@@ -43,6 +43,9 @@ After login, you'll access:
 - Bcryptjs password hashing (pure JavaScript, Azure-compatible)
 - Role-based access control (4 roles: Admin, Analyst, Engineer, Viewer)
 - Audit logging of all auth events
+- **Login restricted to @pfnonwovens.com email accounts**
+- **Login requires at least one group assignment**
+- **Newly created/approved users are auto-assigned to "General Access" when no group is specified**
 - **Login page with frontend authentication flow**
 - **Protected routes** requiring valid JWT tokens
 - **Logout functionality** on all protected pages

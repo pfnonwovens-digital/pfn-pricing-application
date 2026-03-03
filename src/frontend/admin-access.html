@@ -792,8 +792,9 @@
             } else if (tabName === 'groups') {
                 loadGroups();
             } else if (tabName === 'audit') {
-                loadAuditLogs();
-                loadAuditUsers();
+                loadAuditUsers()
+                    .then(() => loadAuditLogs())
+                    .catch(() => loadAuditLogs());
             }
         }
 
@@ -833,8 +834,7 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Email</th>
-                                <th>Full Name</th>
+                                <th>User</th>
                                 <th>Requested</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -846,10 +846,10 @@
                 requests.forEach(req => {
                     const requestedDate = new Date(req.requested_at).toLocaleDateString();
                     const statusClass = `status-${req.status}`;
+                    const userDisplay = formatUserDisplay(req.full_name, req.email, req.email || req.id);
                     html += `
                         <tr>
-                            <td>${req.email}</td>
-                            <td>${req.full_name}</td>
+                            <td>${escapeHtml(userDisplay)}</td>
                             <td>${requestedDate}</td>
                             <td><span class="status-badge ${statusClass}">${req.status.toUpperCase()}</span></td>
                             <td>
@@ -1040,12 +1040,13 @@
 
                 let html = '<div class="users-list">';
                 users.forEach(user => {
+                    const userDisplay = formatUserDisplay(user.name, user.email, user.id);
                     html += `
                         <div class="user-item">
                             <div class="user-info">
-                                <strong>${user.name}</strong>
+                                <strong>${escapeHtml(userDisplay)}</strong>
                                 <br>
-                                <small>${user.email} (${user.role})</small>
+                                <small>${escapeHtml(user.role || '-')}</small>
                             </div>
                             <div class="user-actions">
                                 <button class="btn-edit-user" onclick="openEditUserModal('${user.id}', '${user.name}', '${user.email}')">✏️ Edit</button>
@@ -1378,6 +1379,21 @@
         // ==================== AUDIT LOGS ====================
 
         let auditSearchTimeout = null;
+        let adminUsersById = new Map();
+        let adminUsersByEmail = new Map();
+
+        function formatUserDisplay(name, email, fallback = 'System') {
+            if (name && String(name).trim()) {
+                if (email && String(email).trim()) {
+                    return `${name} (${email})`;
+                }
+                return String(name).trim();
+            }
+            if (email && String(email).trim()) {
+                return String(email).trim();
+            }
+            return fallback;
+        }
 
         async function loadAuditLogs() {
             const loading = document.getElementById('auditLoading');
@@ -1440,7 +1456,13 @@
 
             content.innerHTML = logs.map(log => {
                 const timestamp = new Date(log.timestamp).toLocaleString();
-                const userDisplay = log.user_email || log.user_id || 'System';
+                const emailKey = log.user_email ? String(log.user_email).toLowerCase() : null;
+                const userById = log.user_id ? adminUsersById.get(log.user_id) : null;
+                const userByEmail = emailKey ? adminUsersByEmail.get(emailKey) : null;
+                const resolvedUser = userById || userByEmail;
+                const userDisplay = resolvedUser
+                    ? formatUserDisplay(resolvedUser.name, resolvedUser.email, log.user_id || log.user_email || 'System')
+                    : formatUserDisplay(null, log.user_email, log.user_id || 'System');
                 const details = formatAuditDetails(log.details);
                 
                 return `
@@ -1517,32 +1539,48 @@
                 });
 
                 const data = await response.json();
+                const select = document.getElementById('auditFilterUser');
 
                 if (response.ok) {
-                    const select = document.getElementById('auditFilterUser');
                     const users = Array.isArray(data)
                         ? data
                         : (Array.isArray(data.users) ? data.users : []);
 
+                    adminUsersById = new Map();
+                    adminUsersByEmail = new Map();
+                    users.forEach(user => {
+                        if (user && user.id) {
+                            adminUsersById.set(user.id, user);
+                        }
+                        if (user && user.email) {
+                            adminUsersByEmail.set(String(user.email).toLowerCase(), user);
+                        }
+                    });
+
                     const groupedUsers = users
                         .filter(user => {
-                            if (Array.isArray(user.group_ids)) {
-                                return user.group_ids.length > 0;
-                            }
                             if (Array.isArray(user.groups)) {
-                                return user.groups.length > 0;
+                                return user.groups.filter(Boolean).length > 0;
                             }
-                            return true;
+                            return false;
                         })
                         .sort((a, b) => String(a.email || '').localeCompare(String(b.email || '')));
 
                     select.innerHTML = '<option value="">All Users</option>' +
-                        groupedUsers.map(user =>
-                            `<option value="${user.id}">${escapeHtml(user.email || user.name || user.id)}</option>`
-                        ).join('');
+                        groupedUsers.map(user => {
+                            const displayName = formatUserDisplay(user.name, user.email, user.id);
+                            return `<option value="${user.id}">${escapeHtml(displayName)}</option>`;
+                        }).join('');
+                } else {
+                    console.error('Error loading users for filter:', data.error || response.statusText);
+                    select.innerHTML = '<option value="">All Users</option>';
                 }
             } catch (err) {
                 console.error('Error loading users for filter:', err);
+                const select = document.getElementById('auditFilterUser');
+                if (select) {
+                    select.innerHTML = '<option value="">All Users</option>';
+                }
             }
         }
 

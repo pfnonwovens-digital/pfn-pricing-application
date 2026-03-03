@@ -22,6 +22,8 @@ if (!fs.existsSync(dataDir)) {
 // JWT Secret - change this in production!
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production';
 const JWT_EXPIRY = '48h';
+const CORPORATE_EMAIL_DOMAIN = 'pfnonwovens.com';
+const DEFAULT_ACCESS_GROUP_NAME = 'General Access';
 
 // ==================== DATABASE ====================
 
@@ -200,6 +202,44 @@ function extractToken(req) {
   return req.cookies?.authToken || null;
 }
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isCorporateEmail(email) {
+  return normalizeEmail(email).endsWith(`@${CORPORATE_EMAIL_DOMAIN}`);
+}
+
+async function ensureDefaultAccessGroup() {
+  const existingGroup = await dbGet('SELECT id FROM groups WHERE name = ?', [DEFAULT_ACCESS_GROUP_NAME]);
+  if (existingGroup) {
+    return existingGroup.id;
+  }
+
+  await dbRun(
+    'INSERT INTO groups (name, description, permissions) VALUES (?, ?, ?)',
+    [DEFAULT_ACCESS_GROUP_NAME, 'Baseline access group for active users', JSON.stringify([])]
+  );
+
+  const createdGroup = await dbGet('SELECT id FROM groups WHERE name = ?', [DEFAULT_ACCESS_GROUP_NAME]);
+  return createdGroup.id;
+}
+
+async function ensureUserHasDefaultGroup(userId) {
+  const groupId = await ensureDefaultAccessGroup();
+  const existingMembership = await dbGet(
+    'SELECT id FROM user_groups WHERE user_id = ? AND group_id = ?',
+    [userId, groupId]
+  );
+
+  if (!existingMembership) {
+    await dbRun(
+      'INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)',
+      [userId, groupId]
+    );
+  }
+}
+
 // ==================== AUTHENTICATION ====================
 
 async function login(email, password) {
@@ -207,24 +247,41 @@ async function login(email, password) {
     throw new Error('Email and password required');
   }
 
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!isCorporateEmail(normalizedEmail)) {
+    await auditLog(null, 'LOGIN_FAILED', 'auth', { email: normalizedEmail, reason: 'invalid_domain' });
+    throw new Error(`Only @${CORPORATE_EMAIL_DOMAIN} email addresses can log in`);
+  }
+
   const user = await dbGet(
     'SELECT * FROM users WHERE email = ? AND is_active = 1',
-    [email]
+    [normalizedEmail]
   );
 
   if (!user) {
-    await auditLog(null, 'LOGIN_FAILED', 'auth', { email, reason: 'user_not_found' });
+    await auditLog(null, 'LOGIN_FAILED', 'auth', { email: normalizedEmail, reason: 'user_not_found' });
     throw new Error('User not found');
+  }
+
+  const membership = await dbGet(
+    'SELECT COUNT(*) as count FROM user_groups WHERE user_id = ?',
+    [user.id]
+  );
+
+  if (!membership || membership.count < 1) {
+    await auditLog(user.id, 'LOGIN_FAILED', 'auth', { email: normalizedEmail, reason: 'no_group_membership' });
+    throw new Error('User is not assigned to an access group');
   }
 
   const isValid = await verifyPassword(password, user.password_hash);
   if (!isValid) {
-    await auditLog(null, 'LOGIN_FAILED', 'auth', { email, reason: 'invalid_password' });
+    await auditLog(null, 'LOGIN_FAILED', 'auth', { email: normalizedEmail, reason: 'invalid_password' });
     throw new Error('Invalid password');
   }
 
   const token = issueToken(user);
-  await auditLog(user.id, 'LOGIN_SUCCESS', 'auth', { email });
+  await auditLog(user.id, 'LOGIN_SUCCESS', 'auth', { email: normalizedEmail });
 
   return {
     success: true,
@@ -243,13 +300,19 @@ async function createUser(email, name, password, role = 'viewer') {
     throw new Error('Email, name, and password required');
   }
 
+  const normalizedEmail = normalizeEmail(email);
+
   // Validate email
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     throw new Error('Invalid email format');
   }
 
+  if (!isCorporateEmail(normalizedEmail)) {
+    throw new Error(`Only @${CORPORATE_EMAIL_DOMAIN} email addresses are allowed`);
+  }
+
   // Check if exists
-  const existing = await dbGet('SELECT id FROM users WHERE email = ?', [email]);
+  const existing = await dbGet('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
   if (existing) {
     throw new Error('Email already in use');
   }
@@ -261,16 +324,20 @@ async function createUser(email, name, password, role = 'viewer') {
   }
 
   const passwordHash = await hashPassword(password);
-  const result = await dbRun(
+  await dbRun(
     'INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, ?)',
-    [email, name, passwordHash, role]
+    [normalizedEmail, name, passwordHash, role]
   );
 
+  const createdUser = await dbGet('SELECT id, email, name, role FROM users WHERE email = ?', [normalizedEmail]);
+
+  await ensureUserHasDefaultGroup(createdUser.id);
+
   return {
-    id: result.id,
-    email,
-    name,
-    role
+    id: createdUser.id,
+    email: createdUser.email,
+    name: createdUser.name,
+    role: createdUser.role
   };
 }
 
@@ -351,13 +418,15 @@ async function requestAccess(email, fullName, reason = '') {
     throw new Error('Email and full name required');
   }
 
+  const normalizedEmail = normalizeEmail(email);
+
   // Validate email is @pfnonwovens.com
-  if (!email.endsWith('@pfnonwovens.com')) {
+  if (!isCorporateEmail(normalizedEmail)) {
     throw new Error('Only @pfnonwovens.com email addresses can request access');
   }
 
   // Check if email already has an account
-  const existing = await dbGet('SELECT id FROM users WHERE email = ?', [email]);
+  const existing = await dbGet('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
   if (existing) {
     throw new Error('User already has an account');
   }
@@ -365,7 +434,7 @@ async function requestAccess(email, fullName, reason = '') {
   // Check if already has pending request
   const pending = await dbGet(
     'SELECT id FROM access_requests WHERE email = ? AND status = ?',
-    [email, 'pending']
+    [normalizedEmail, 'pending']
   );
   if (pending) {
     throw new Error('You already have a pending access request');
@@ -374,14 +443,14 @@ async function requestAccess(email, fullName, reason = '') {
   // Create access request
   const result = await dbRun(
     'INSERT INTO access_requests (email, full_name, reason) VALUES (?, ?, ?)',
-    [email, fullName, reason]
+    [normalizedEmail, fullName, reason]
   );
 
-  await auditLog(null, 'ACCESS_REQUEST', 'access', { email, fullName });
+  await auditLog(null, 'ACCESS_REQUEST', 'access', { email: normalizedEmail, fullName });
 
   return {
     id: result.id,
-    email,
+    email: normalizedEmail,
     fullName,
     status: 'pending',
     requested_at: new Date().toISOString()
@@ -417,24 +486,28 @@ async function approveAccessRequest(requestId, adminUserId) {
   const tempPassword = Math.random().toString(36).slice(-12);
   const passwordHash = await hashPassword(tempPassword);
 
-  const userResult = await dbRun(
+  await dbRun(
     'INSERT INTO users (email, name, password_hash, role, is_active) VALUES (?, ?, ?, ?, ?)',
     [request.email, request.full_name, passwordHash, 'viewer', 1]
   );
 
+  const createdUser = await dbGet('SELECT id FROM users WHERE email = ?', [request.email]);
+
+  await ensureUserHasDefaultGroup(createdUser.id);
+
   // Update request status
   await dbRun(
     'UPDATE access_requests SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?',
-    [adminUserId, 'approved', new Date().toISOString(), requestId]
+    ['approved', adminUserId, new Date().toISOString(), requestId]
   );
 
   await auditLog(adminUserId, 'ACCESS_REQUEST_APPROVED', 'access', {
     email: request.email,
-    userId: userResult.id
+    userId: createdUser.id
   });
 
   return {
-    userId: userResult.id,
+    userId: createdUser.id,
     email: request.email,
     name: request.full_name,
     tempPassword,
@@ -625,13 +698,19 @@ async function getAllUsers() {
 }
 
 async function createDirectUser(email, fullName, password, groupId = null) {
+  const normalizedEmail = normalizeEmail(email);
+
   // Validate email format
-  if (!email || !email.includes('@')) {
+  if (!normalizedEmail || !normalizedEmail.includes('@')) {
     throw new Error('Invalid email address');
   }
 
+  if (!isCorporateEmail(normalizedEmail)) {
+    throw new Error(`Only @${CORPORATE_EMAIL_DOMAIN} email addresses are allowed`);
+  }
+
   // Check if user already exists
-  const existing = await dbGet('SELECT id FROM users WHERE email = ?', [email]);
+  const existing = await dbGet('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
   if (existing) {
     throw new Error('Email already in use');
   }
@@ -651,7 +730,7 @@ async function createDirectUser(email, fullName, password, groupId = null) {
   // Create user with viewer role by default
   const result = await dbRun(
     'INSERT INTO users (id, email, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [userId, email, fullName, hashedPassword, 'viewer', new Date().toISOString()]
+    [userId, normalizedEmail, fullName, hashedPassword, 'viewer', new Date().toISOString()]
   );
 
   // Add to group if provided
@@ -660,14 +739,16 @@ async function createDirectUser(email, fullName, password, groupId = null) {
       'INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)',
       [userId, groupId]
     );
+  } else {
+    await ensureUserHasDefaultGroup(userId);
   }
 
   // Log audit event
-  await auditLog(userId, 'user_created', 'users', { email, name: fullName });
+  await auditLog(userId, 'user_created', 'users', { email: normalizedEmail, name: fullName });
 
   return {
     id: userId,
-    email,
+    email: normalizedEmail,
     name: fullName,
     role: 'viewer',
     groupId: groupId || null
@@ -682,13 +763,19 @@ async function updateUser(userId, email, fullName, password = null) {
   }
 
   // Validate email format
-  if (email && !email.includes('@')) {
+  const normalizedEmail = email ? normalizeEmail(email) : null;
+
+  if (normalizedEmail && !normalizedEmail.includes('@')) {
     throw new Error('Invalid email address');
   }
 
+  if (normalizedEmail && !isCorporateEmail(normalizedEmail)) {
+    throw new Error(`Only @${CORPORATE_EMAIL_DOMAIN} email addresses are allowed`);
+  }
+
   // Check if new email is already in use by another user
-  if (email && email !== user.email) {
-    const existing = await dbGet('SELECT id FROM users WHERE email = ? AND id != ?', [email, userId]);
+  if (normalizedEmail && normalizedEmail !== user.email) {
+    const existing = await dbGet('SELECT id FROM users WHERE email = ? AND id != ?', [normalizedEmail, userId]);
     if (existing) {
       throw new Error('Email already in use');
     }
@@ -699,9 +786,9 @@ async function updateUser(userId, email, fullName, password = null) {
   let updateFields = [];
   let updateValues = [];
 
-  if (email) {
+  if (normalizedEmail) {
     updateFields.push('email = ?');
-    updateValues.push(email);
+    updateValues.push(normalizedEmail);
   }
 
   if (fullName) {
@@ -728,7 +815,7 @@ async function updateUser(userId, email, fullName, password = null) {
 
   return {
     id: userId,
-    email,
+    email: normalizedEmail || user.email,
     name: fullName
   };
 }
