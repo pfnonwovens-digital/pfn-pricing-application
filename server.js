@@ -9,16 +9,22 @@ const { loadMaterials } = require("./src/backend/materials");
 const { loadFxRates } = require("./src/backend/fx");
 const { getEditableProducts, updateProduct, searchProducts, duplicateProduct, deleteProduct } = require("./src/backend/products-editor");
 const auth = require("./src/backend/auth");
+const polymerIndexes = require("./src/backend/polymer-indexes");
 const XLSX = require("xlsx");
 
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Initialize database on startup
 auth.initializeDatabase().catch(err => {
   console.error("Failed to initialize database:", err);
+  process.exit(1);
+});
+
+polymerIndexes.initializeDatabase().catch(err => {
+  console.error("Failed to initialize polymer index database:", err);
   process.exit(1);
 });
 
@@ -80,6 +86,22 @@ app.get("/products", (req, res, next) => {
     });
   } catch (err) {
     console.error("[ERROR] Products route error:", err);
+    next(err);
+  }
+});
+
+app.get("/polymer-indexes", (req, res, next) => {
+  try {
+    const filePath = path.join(__dirname, "src", "frontend", "polymer-indexes.html");
+    console.log("[ROUTE] GET /polymer-indexes - Serving:", filePath);
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error("[ERROR] Failed to send polymer-indexes.html:", err);
+        next(err);
+      }
+    });
+  } catch (err) {
+    console.error("[ERROR] Polymer indexes route error:", err);
     next(err);
   }
 });
@@ -382,6 +404,167 @@ app.get("/api/admin/audit-logs/stats", auth.authMiddleware, auth.requirePermissi
       success: true,
       stats
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==================== POLYMER INDEX ENDPOINTS ====================
+
+app.get("/api/admin/polymer-indexes", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const includeInactive = req.query.includeInactive === 'true';
+    const indexes = await polymerIndexes.getIndexes(includeInactive);
+    res.json({ success: true, indexes });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/admin/polymer-indexes", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const index = await polymerIndexes.createIndex(req.body || {});
+    await auth.auditLog(req.user.id, 'INDEX_DEFINITION_CREATED', 'polymer_indexes', {
+      indexId: index.id,
+      indexName: index.name
+    });
+    res.status(201).json({ success: true, index });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.put("/api/admin/polymer-indexes/:id", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const payload = req.body || {};
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'isActive')) {
+      const existing = await auth.dbGet('SELECT is_active FROM polymer_indexes WHERE id = ?', [req.params.id]);
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Index not found' });
+      }
+
+      const requestedIsActive = payload.isActive ? 1 : 0;
+      if (requestedIsActive !== existing.is_active) {
+        const groups = await auth.getUserGroups(req.user.id);
+        const isAdminGroupMember = groups.some(group => String(group?.name || '').toLowerCase() === 'admin');
+
+        if (!isAdminGroupMember) {
+          return res.status(403).json({
+            success: false,
+            error: 'Only Admin group members can activate or deactivate indexes'
+          });
+        }
+      }
+    }
+
+    const index = await polymerIndexes.updateIndex(req.params.id, payload);
+    await auth.auditLog(req.user.id, 'INDEX_DEFINITION_UPDATED', 'polymer_indexes', {
+      indexId: index.id,
+      indexName: index.name
+    });
+    res.json({ success: true, index });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.delete("/api/admin/polymer-indexes/:id", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const groups = await auth.getUserGroups(req.user.id);
+    const isAdminGroupMember = groups.some(group => String(group?.name || '').toLowerCase() === 'admin');
+
+    if (!isAdminGroupMember) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Admin group members can delete indexes'
+      });
+    }
+
+    const result = await polymerIndexes.deleteIndex(req.params.id);
+
+    await auth.auditLog(req.user.id, 'INDEX_DEFINITION_DELETED', 'polymer_indexes', {
+      indexId: result.id,
+      indexName: result.name
+    });
+
+    res.json({ success: true, result });
+  } catch (err) {
+    const status = err.message === 'Index not found'
+      ? 404
+      : err.message === 'Only deactivated indexes can be deleted'
+        ? 400
+        : 400;
+    res.status(status).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/admin/polymer-indexes/:id/values", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const values = await polymerIndexes.getIndexValues(req.params.id, {
+      startDate: req.query.startDate || null,
+      endDate: req.query.endDate || null,
+      limit: req.query.limit ? Number(req.query.limit) : 520
+    });
+    res.json({ success: true, values });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/admin/polymer-indexes/:id/values", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const value = await polymerIndexes.upsertIndexValue(req.params.id, req.body || {}, req.user.id);
+    res.status(201).json({ success: true, value });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/admin/polymer-indexes/import", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    const result = await polymerIndexes.bulkImport(rows, req.user.id);
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/admin/polymer-indexes/reminders/due", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const due = await polymerIndexes.getDueReminders(new Date());
+    res.json({ success: true, due });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get("/api/admin/polymer-indexes/data/by-week", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const startYear = Number(req.query.startYear) || 2020;
+    const endYear = Number(req.query.endYear) || 2026;
+    const data = await polymerIndexes.getDataByWeek({ startYear, endYear });
+    res.json({ success: true, weeks: data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete("/api/admin/polymer-indexes/data/all", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const result = await polymerIndexes.clearAllIndexValues();
+    await auth.auditLog(req.user.id, 'DELETE_ALL_INDEX_VALUES', 'polymer_index_values', null, { deletedCount: result.deletedCount });
+    res.json({ success: true, message: `Successfully deleted ${result.deletedCount} index values`, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post("/api/admin/polymer-indexes/recalculate-mid", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const result = await polymerIndexes.recalculateAllMidValues(req.user.id);
+    res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polymer Resin Index Management</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body { background: #f5f5f5; }
+    .page { max-width: 1400px; margin: 0 auto; padding: 16px; }
+    .card { background: white; border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .row > * { min-width: 140px; }
+    .table-wrap { overflow: auto; max-height: 600px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #ececec; padding: 8px; text-align: left; font-size: 12px; }
+    th {
+      background: #f9f9f9;
+      color: #333;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    input, select, textarea, button { padding: 8px; font-size: 14px; }
+    .muted { color: #666; font-size: 12px; }
+    .danger { color: #a60000; }
+    .ok { color: #067a00; }
+    .btn-primary { background: #0066cc; color: white; }
+    .btn-secondary { background: #6c757d; color: white; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="page">
+    <div class="card row" style="justify-content: space-between;">
+      <h2 style="margin:0;">Polymer Resin Index Management</h2>
+      <div class="row">
+        <button onclick="window.location.href='/dashboard'">Return to Dashboard</button>
+        <button onclick="window.location.href='/polymer-indexes.html'" class="btn-primary">Return to Index Data</button>
+      </div>
+    </div>
+
+    <div id="status" class="card muted">Ready</div>
+
+    <!-- Create Index Definitions -->
+    <div class="card">
+      <h3 style="margin-top:0;">1) Create Index Definitions</h3>
+      <div class="muted" style="margin-bottom:8px;">
+        Define index name (base name), optional variant, unit, currency, and publication day. Updates are done through the Edit function.
+      </div>
+      <div class="row">
+        <input id="idxName" placeholder="Index name (e.g., ICIS PP Raffia)" style="min-width:280px;" />
+        <select id="idxVariant" style="min-width:100px;">
+          <option value="">No Variant</option>
+          <option value="Min">Min</option>
+          <option value="Mid">Mid</option>
+          <option value="Max">Max</option>
+        </select>
+        <input id="idxUnit" placeholder="Unit (e.g., kg)" value="kg" style="min-width:140px;" />
+        <input id="idxCurrency" placeholder="Currency (e.g., EUR)" value="EUR" style="min-width:100px;" />
+        <select id="idxDay">
+          <option value="0">Sunday</option>
+          <option value="1">Monday</option>
+          <option value="2">Tuesday</option>
+          <option value="3">Wednesday</option>
+          <option value="4">Thursday</option>
+          <option value="5" selected>Friday</option>
+          <option value="6">Saturday</option>
+        </select>
+        <button onclick="createIndex()">Create Index</button>
+        <button onclick="loadIndexes()">Refresh</button>
+      </div>
+    </div>
+
+    <!-- Upload Historical Data -->
+    <div class="card">
+      <h3 style="margin-top:0;">2) Upload Historical Data (Excel)</h3>
+      <div class="muted" style="margin-bottom:8px;">
+        Expected columns: <b>Index Name</b>, optional <b>Variant</b>, <b>Value Date</b> (YYYY-MM-DD), <b>Value</b>
+      </div>
+      <div class="muted" style="margin-bottom:8px; font-size:11px;">
+        Note: Unit and currency are retrieved from the index definition. Indexes must already exist in the database before importing historical data.
+      </div>
+      <div class="row">
+        <input type="file" id="excelFile" accept=".xlsx,.xls" />
+        <button onclick="importExcel()">Import Excel Rows</button>
+        <button onclick="recalculateMidValues()" class="btn-secondary">Recalculate All Mid Values (One-time)</button>
+      </div>
+    </div>
+
+    <!-- Manual Weekly Entry -->
+    <div class="card">
+      <h3 style="margin-top:0;">3) Manual Weekly Entry</h3>
+      <div class="muted" style="margin-bottom:8px;">
+        Note: Mid is always calculated as the average of Min and Max values.
+      </div>
+      <div class="row">
+        <div>
+          <label style="display:block; font-size:12px; color:#666; margin-bottom:4px;">Index Name:</label>
+          <select id="entryIndex" style="min-width:280px;" onchange="updateVariantDropdown()"></select>
+        </div>
+        <div>
+          <label style="display:block; font-size:12px; color:#666; margin-bottom:4px;">Variant:</label>
+          <select id="entryVariant" style="min-width:120px;"></select>
+        </div>
+        <input id="entryDate" type="date" />
+        <input id="entryValue" type="number" step="0.0001" placeholder="Index value" />
+        <button onclick="saveValue()">Save Value</button>
+      </div>
+    </div>
+
+    <!-- Index Definitions Table -->
+    <div class="card">
+      <h3 style="margin-top:0;">Index Definitions</h3>
+      <div class="row" style="margin-bottom:8px;">
+        <label style="display:flex; align-items:center; gap:6px; min-width:auto;">
+          <input id="showInactive" type="checkbox" onchange="loadIndexes()" />
+          Show inactive
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Index name</th>
+              <th>Unit</th>
+              <th>Currency</th>
+              <th>Published on</th>
+              <th>Active</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="indexRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Edit Index Modal -->
+    <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+      <div style="position:relative; top:20%; margin:auto; max-width:500px; background:white; padding:24px; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+        <h3 style="margin-top:0;">Edit Index</h3>
+        <div style="margin-bottom:12px;">
+          <label style="display:block; margin-bottom:4px; font-weight:500;">Index Name:</label>
+          <input id="editIndexName" style="width:100%; padding:8px; font-size:14px;" />
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block; margin-bottom:4px; font-weight:500;">Unit:</label>
+          <input id="editIndexUnit" placeholder="e.g., USD/MT" style="width:100%; padding:8px; font-size:14px;" />
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block; margin-bottom:4px; font-weight:500;">Currency:</label>
+          <input id="editIndexCurrency" placeholder="e.g., USD" style="width:100%; padding:8px; font-size:14px;" />
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block; margin-bottom:4px; font-weight:500;">Publish Weekday:</label>
+          <select id="editIndexDay" style="width:100%; padding:8px; font-size:14px;">
+            <option value="0">Sunday</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">
+          <button onclick="closeEditModal()" style="background:#ccc; color:#333;">Cancel</button>
+          <button onclick="saveEditIndex()">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('authToken');
+    let indexes = [];
+    let currentEditIndexId = null;
+    let isAdminGroupMember = false;
+    let isProcurementOrAdmin = false;
+    let baseIndexMap = new Map();
+    let indexVariantMap = new Map();
+
+    function setStatus(message, type = 'muted') {
+      const el = document.getElementById('status');
+      el.className = `card ${type}`;
+      el.textContent = message;
+    }
+
+    function weekdayName(num) {
+      return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][Number(num)] || '-';
+    }
+
+    function parseIndexName(fullName) {
+      const match = fullName.match(/^(.*?)\s*(?:-|\s)\s*(Min|Mid|Max)\s*$/i);
+      if (match) {
+        return { baseName: match[1].trim(), variant: match[2].toUpperCase() };
+      }
+      return { baseName: fullName.trim(), variant: null };
+    }
+
+    function sortVariants(variants) {
+      const order = { 'MIN': 0, 'MID': 1, 'MAX': 2 };
+      return Array.from(variants).sort((a, b) => {
+        const aOrder = order[a] ?? 99;
+        const bOrder = order[b] ?? 99;
+        return aOrder - bOrder;
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          ...(options.headers || {})
+        }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) {
+          localStorage.removeItem('authToken');
+          window.location.href = '/login.html';
+          return;
+        }
+        throw new Error(data.error || data.message || `HTTP ${res.status}`);
+      }
+      return data;
+    }
+
+    async function loadUserGroupAccess() {
+      try {
+        const groups = await api('/api/auth/me/groups');
+        isAdminGroupMember = Array.isArray(groups)
+          ? groups.some(group => String(group?.name || '').toLowerCase() === 'admin')
+          : false;
+        
+        isProcurementOrAdmin = Array.isArray(groups)
+          ? groups.some(group => {
+              const groupName = String(group?.name || '').toLowerCase();
+              return groupName === 'admin' || groupName === 'procurement';
+            })
+          : false;
+
+        // Redirect if user is not in Admin or Procurement group
+        if (!isProcurementOrAdmin) {
+          setStatus('Access denied: Only Admin and Procurement team members can access this page', 'danger');
+          setTimeout(() => window.location.href = '/polymer-indexes.html', 2000);
+        }
+      } catch (err) {
+        isAdminGroupMember = false;
+        isProcurementOrAdmin = false;
+        console.warn('Could not determine group membership:', err.message);
+        setTimeout(() => window.location.href = '/polymer-indexes.html', 2000);
+      }
+    }
+
+    async function loadIndexes() {
+      const includeInactive = Boolean(document.getElementById('showInactive')?.checked);
+      const data = await api(`/api/admin/polymer-indexes?includeInactive=${includeInactive ? 'true' : 'false'}`);
+      indexes = data.indexes || [];
+
+      // Rebuild maps
+      baseIndexMap.clear();
+      indexVariantMap.clear();
+
+      // Group indexes by base name
+      indexes.forEach(i => {
+        const { baseName, variant } = parseIndexName(i.name);
+        
+        if (!baseIndexMap.has(baseName)) {
+          baseIndexMap.set(baseName, []);
+        }
+        baseIndexMap.get(baseName).push(i);
+
+        // Track variants
+        if (!indexVariantMap.has(i.id)) {
+          indexVariantMap.set(i.id, variant);
+        }
+      });
+
+      // Populate base index dropdown
+      const entrySelect = document.getElementById('entryIndex');
+      const baseNames = Array.from(baseIndexMap.keys()).sort();
+      entrySelect.innerHTML = '<option value="">Select index...</option>' + 
+        baseNames.map(baseName => {
+          return `<option value="${baseName}">${baseName}</option>`;
+        }).join('');
+
+      // Initialize variant dropdown
+      updateVariantDropdown();
+
+      // Render index definitions table
+      const rowsEl = document.getElementById('indexRows');
+      if (!indexes.length) {
+        rowsEl.innerHTML = '<tr><td colspan="6">No indexes yet.</td></tr>';
+        return;
+      }
+
+      rowsEl.innerHTML = indexes.map(i => `
+        <tr>
+          <td>${escapeHtml(i.name)}</td>
+          <td>${escapeHtml(i.unit || '')}</td>
+          <td>${escapeHtml(i.currency || '')}</td>
+          <td>${weekdayName(i.publish_weekday)}</td>
+          <td>${i.is_active ? 'Yes' : 'No'}</td>
+          <td>
+            <button onclick="openEditModal('${i.id}')" style="font-size:11px; margin-right:4px;">Edit</button>
+            ${isAdminGroupMember
+              ? `<button onclick="toggleActive('${i.id}', ${i.is_active ? 0 : 1})" style="font-size:11px; margin-right:4px;">${i.is_active ? 'Deactivate' : 'Activate'}</button>`
+              : ''}
+            ${isAdminGroupMember && !i.is_active
+              ? `<button onclick="deleteIndex('${i.id}')" style="font-size:11px;">Delete</button>`
+              : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function updateVariantDropdown() {
+      const baseName = document.getElementById('entryIndex').value;
+      const variantSelect = document.getElementById('entryVariant');
+      
+      if (!baseName) {
+        variantSelect.innerHTML = '<option value="">No variant</option>';
+        return;
+      }
+
+      const indexArray = baseIndexMap.get(baseName) || [];
+      const variants = new Set();
+      let hasNoVariant = false;
+
+      // Collect all variants for this base name
+      indexArray.forEach(idx => {
+        const { variant } = parseIndexName(idx.name);
+        if (variant) {
+          variants.add(variant);
+        } else {
+          hasNoVariant = true;
+        }
+      });
+
+      // Build variant dropdown
+      let html = '';
+      if (hasNoVariant || variants.size === 0) {
+        html += '<option value="">No variant</option>';
+      }
+      if (variants.size > 0) {
+        const sortedVariants = Array.from(variants)
+          .filter(v => String(v).toUpperCase() !== 'MID')
+          .sort();
+        html += sortedVariants.map(v => `<option value=" - ${v}"> - ${v}</option>`).join('');
+      }
+      variantSelect.innerHTML = html;
+    }
+
+    async function createIndex() {
+      const baseName = document.getElementById('idxName').value.trim();
+      const variant = document.getElementById('idxVariant').value.trim();
+      const unit = document.getElementById('idxUnit').value.trim();
+      const currency = document.getElementById('idxCurrency').value.trim();
+      const publishWeekday = Number(document.getElementById('idxDay').value);
+      
+      if (!baseName) return setStatus('Index name is required', 'danger');
+
+      const fullName = variant ? `${baseName} - ${variant}` : baseName;
+
+      await api('/api/admin/polymer-indexes', {
+        method: 'POST',
+        body: JSON.stringify({ name: fullName, unit, currency, publishWeekday, isActive: 1 })
+      });
+
+      // Keep the index name, reset variant only
+      document.getElementById('idxVariant').value = '';
+      setStatus('Index created successfully', 'ok');
+      await loadIndexes();
+    }
+
+    async function toggleActive(indexId, isActive) {
+      if (!isAdminGroupMember) {
+        return setStatus('Only Admin group members can activate or deactivate indexes', 'danger');
+      }
+
+      const idx = indexes.find(i => i.id === indexId);
+      if (!idx) return;
+      await api(`/api/admin/polymer-indexes/${indexId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isActive, name: idx.name, unit: idx.unit, currency: idx.currency, publishWeekday: idx.publish_weekday })
+      });
+      setStatus(`Index ${isActive ? 'activated' : 'deactivated'}`, 'ok');
+      await loadIndexes();
+    }
+
+    async function deleteIndex(indexId) {
+      if (!isAdminGroupMember) {
+        return setStatus('Only Admin group members can delete indexes', 'danger');
+      }
+
+      const idx = indexes.find(i => i.id === indexId);
+      if (!idx) return;
+
+      if (idx.is_active) {
+        return setStatus('Only deactivated indexes can be deleted', 'danger');
+      }
+
+      const confirmed = window.confirm(`Delete deactivated index "${idx.name}"? This also deletes its historical values.`);
+      if (!confirmed) return;
+
+      await api(`/api/admin/polymer-indexes/${indexId}`, {
+        method: 'DELETE'
+      });
+
+      setStatus(`Index deleted: ${idx.name}`, 'ok');
+      await loadIndexes();
+    }
+
+    function openEditModal(indexId) {
+      const idx = indexes.find(i => i.id === indexId);
+      if (!idx) return;
+      
+      currentEditIndexId = indexId;
+      document.getElementById('editIndexName').value = idx.name;
+      document.getElementById('editIndexUnit').value = idx.unit || '';
+      document.getElementById('editIndexCurrency').value = idx.currency || '';
+      document.getElementById('editIndexDay').value = idx.publish_weekday;
+      document.getElementById('editModal').style.display = 'block';
+    }
+
+    function closeEditModal() {
+      document.getElementById('editModal').style.display = 'none';
+      currentEditIndexId = null;
+    }
+
+    async function saveEditIndex() {
+      if (!currentEditIndexId) return;
+      
+      const name = document.getElementById('editIndexName').value.trim();
+      const unit = document.getElementById('editIndexUnit').value.trim();
+      const currency = document.getElementById('editIndexCurrency').value.trim();
+      const publishWeekday = Number(document.getElementById('editIndexDay').value);
+      
+      if (!name) {
+        return setStatus('Index name is required', 'danger');
+      }
+      
+      const idx = indexes.find(i => i.id === currentEditIndexId);
+      if (!idx) return;
+      
+      await api(`/api/admin/polymer-indexes/${currentEditIndexId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ 
+          name, 
+          unit,
+          currency,
+          publishWeekday, 
+          isActive: idx.is_active 
+        })
+      });
+      
+      closeEditModal();
+      setStatus('Index updated successfully', 'ok');
+      await loadIndexes();
+    }
+
+    async function saveValue() {
+      const baseName = document.getElementById('entryIndex').value;
+      let valueDate = document.getElementById('entryDate').value;
+      const value = document.getElementById('entryValue').value;
+      const variant = document.getElementById('entryVariant').value;
+
+      if (!baseName || !valueDate || value === '') {
+        return setStatus('Index, date and value are required', 'danger');
+      }
+
+      // Find the full index name by combining base name with variant
+      const fullIndexName = (baseName + variant).trim();
+      const idx = indexes.find(i => i.name === fullIndexName);
+      
+      if (!idx) {
+        return setStatus(`Index "${fullIndexName}" not found. Please create it first.`, 'danger');
+      }
+
+      await api(`/api/admin/polymer-indexes/${idx.id}/values`, {
+        method: 'POST',
+        body: JSON.stringify({ valueDate, value, notes: variant })
+      });
+
+      setStatus('Weekly index value saved', 'ok');
+      document.getElementById('entryValue').value = '';
+      // Keep date persisted - don't clear it
+    }
+
+    async function importExcel() {
+      const fileInput = document.getElementById('excelFile');
+      const file = fileInput.files?.[0];
+      if (!file) return setStatus('Select an Excel file first', 'danger');
+
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rawSheetRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      if (!rawSheetRows.length || !Array.isArray(rawSheetRows[0])) {
+        return setStatus('Excel file must include a header row as the first row', 'danger');
+      }
+
+      const normalizeHeader = (value) => String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '');
+      const firstRowHeaders = rawSheetRows[0].map(normalizeHeader).filter(Boolean);
+      const headerSet = new Set(firstRowHeaders);
+
+      const requiredHeaders = [
+        { label: 'Index Name', aliases: ['indexname'] },
+        { label: 'Value Date', aliases: ['valuedate'] },
+        { label: 'Value', aliases: ['value'] }
+      ];
+
+      const missingHeaders = requiredHeaders
+        .filter(h => !h.aliases.some(alias => headerSet.has(alias)))
+        .map(h => h.label);
+
+      if (missingHeaders.length) {
+        return setStatus(
+          `Missing required header(s): ${missingHeaders.join(', ')}. First row must include: Index Name, Value Date, Value (Variant is optional).`,
+          'danger'
+        );
+      }
+
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      if (!rows.length) return setStatus('Excel file has no rows', 'danger');
+
+      const result = await api('/api/admin/polymer-indexes/import', {
+        method: 'POST',
+        body: JSON.stringify({ rows })
+      });
+
+const r = result.result || result;
+      const totalRows = Number(r.totalRows || 0);
+      const insertedValues = Number(r.insertedValues || 0);
+      const updatedValues = Number(r.updatedValues || 0);
+      const errors = Array.isArray(r.errors) ? r.errors : [];
+
+      let statusType = 'ok';
+      let statusMessage = `Import: ${totalRows} rows, ${insertedValues} inserted, ${updatedValues} updated, ${errors.length} errors`;
+
+      if (errors.length > 0) {
+        statusType = 'danger';
+      } else if (insertedValues + updatedValues === 0) {
+        statusType = 'danger';
+        statusMessage += '. No rows were applied. Check Index Name/Value Date format, optional Variant values, and ensure target indexes exist.';
+      }
+
+      setStatus(statusMessage, statusType);
+
+      if (errors.length) console.error('Import errors:', errors);
+      fileInput.value = '';
+      await loadIndexes();
+    }
+
+    async function recalculateMidValues() {
+      const confirmed = window.confirm(
+        'This will recalculate ALL Mid values from Min and Max for all matching dates. Continue?'
+      );
+      if (!confirmed) return;
+
+      setStatus('Recalculating Mid values...', 'muted');
+
+      try {
+        const response = await api('/api/admin/polymer-indexes/recalculate-mid', {
+          method: 'POST'
+        });
+
+        const result = response.result || {};
+        setStatus(
+          `Recalculation complete: groups ${result.groupsProcessed || 0} processed, ${result.totalDatesProcessed || 0} date pairs, Mid created ${result.midCreated || 0}, Mid updated ${result.midUpdated || 0}.`,
+          'ok'
+        );
+      } catch (err) {
+        setStatus(`Recalculation failed: ${err.message}`, 'danger');
+      }
+    }
+
+    async function init() {
+      if (!token) {
+        window.location.href = '/login.html';
+        return;
+      }
+
+      try {
+        setStatus('Loading...');
+        await loadUserGroupAccess();
+        // Only proceed if user has access
+        if (isProcurementOrAdmin) {
+          await loadIndexes();
+          setStatus('Ready', 'ok');
+        }
+      } catch (err) {
+        setStatus(`Error: ${err.message}`, 'danger');
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

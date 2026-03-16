@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polymer Resin Index Data</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body { background: #f5f5f5; }
+    .page { max-width: 1400px; margin: 0 auto; padding: 16px; }
+    .card { background: white; border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .row > * { min-width: 140px; }
+    .table-wrap { overflow: auto; max-height: 600px; position: relative; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    th, td { border-bottom: 1px solid #ececec; padding: 8px; text-align: left; font-size: 12px; }
+    th {
+      background: #f9f9f9;
+      color: #333;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: normal;
+      cursor: default;
+      position: static;
+    }
+    #historicalHead { position: relative; z-index: 30; }
+    #historicalHead th {
+      position: sticky;
+      background: #f9f9f9;
+    }
+    #historicalHead tr:first-child th { top: 0; z-index: 32; }
+    #historicalHead tr:nth-child(2) th { top: var(--header-row1-height, 44px); z-index: 31; }
+    #historicalHead tr:first-child th.week-col {
+      top: 0;
+      left: 0;
+      z-index: 40;
+      min-width: 95px;
+      width: 95px;
+      background: #f9f9f9;
+    }
+    th:hover { background: #f9f9f9; }
+    td.week-label {
+      font-weight: 600;
+      width: 95px;
+      min-width: 95px;
+      position: sticky;
+      left: 0;
+      background: white;
+      z-index: 6;
+      white-space: nowrap;
+    }
+    td.historical-date {
+      min-width: 92px;
+      white-space: nowrap;
+    }
+    td.zero { color: #ccc; }
+    td.nonzero { color: #333; font-weight: 500; }
+    input, select, textarea, button { padding: 8px; font-size: 14px; }
+    .muted { color: #666; font-size: 12px; }
+    .danger { color: #a60000; }
+    .ok { color: #067a00; }
+    .index-group { border-right: 2px solid #ddd; padding-right: 4px; }
+    .index-group:last-child { border-right: none; }
+    .header-index { font-size: 11px; font-weight: 600; padding: 2px 4px; }
+    .header-pubday { font-size: 10px; color: #666; }
+    .value-variant { font-size: 10px; color: #888; }
+    .btn-primary { background: #0066cc; color: white; }
+    .btn-secondary { background: #6c757d; color: white; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="page">
+    <div class="card row" style="justify-content: space-between;">
+      <h2 style="margin:0;">Polymer Resin Index Data</h2>
+      <div class="row">
+        <button onclick="window.location.href='/dashboard'">Return to Dashboard</button>
+        <button id="adminButton" onclick="window.location.href='/polymer-index-admin.html'" class="btn-primary" style="display:none;">Index Management</button>
+      </div>
+    </div>
+
+    <div id="status" class="card muted">Ready</div>
+
+    <!-- Historical Data by Week -->
+    <div class="card">
+      <h3 style="margin-top:0;">Historical Data by Week</h3>
+      <div class="row">
+        <label>Start Year:
+          <select id="yearStart" style="min-width: 80px;">
+            <option value="2020">2020</option>
+            <option value="2021">2021</option>
+            <option value="2022">2022</option>
+            <option value="2023">2023</option>
+            <option value="2024">2024</option>
+            <option value="2025">2025</option>
+            <option value="2026" selected>2026</option>
+          </select>
+        </label>
+        <label>End Year:
+          <select id="yearEnd" style="min-width: 80px;">
+            <option value="2020">2020</option>
+            <option value="2021">2021</option>
+            <option value="2022">2022</option>
+            <option value="2023">2023</option>
+            <option value="2024">2024</option>
+            <option value="2025">2025</option>
+            <option value="2026" selected>2026</option>
+          </select>
+        </label>
+        <button onclick="loadHistoricalData()">Load Data</button>
+        <button onclick="openChartModal()" class="btn-primary">Show Chart</button>
+        <button onclick="openExportModal()" class="btn-primary">Export Data</button>
+        <button onclick="confirmClearAllData()" style="background:#dc3545; color:white; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-size:14px; margin-left:8px;" title="Admin only: Delete all historical index values from database">Clear All Data</button>
+      </div>
+      <div class="table-wrap" style="margin-top: 12px;">
+        <table id="historicalTable">
+          <thead id="historicalHead"></thead>
+          <tbody id="historicalBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Export Data Modal -->
+    <div id="exportModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; overflow:auto;">
+      <div style="position:relative; top:5%; margin:auto; max-width:600px; background:white; padding:24px; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); margin-bottom: 20px;">
+        <h3 style="margin-top:0;">Export Historical Data</h3>
+        
+        <div style="margin-bottom:16px;">
+          <label style="display:block; margin-bottom:4px; font-weight:500;">Date Range:</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input type="date" id="exportStartDate" style="padding:8px; font-size:14px; flex:1;" />
+            <span>to</span>
+            <input type="date" id="exportEndDate" style="padding:8px; font-size:14px; flex:1;" />
+          </div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block; margin-bottom:8px; font-weight:500;">Select Indexes to Export:</label>
+          <div style="margin-bottom:8px;">
+            <button type="button" onclick="selectAllIndexes()" style="padding:4px 12px; font-size:12px; margin-right:8px;">Select All</button>
+            <button type="button" onclick="deselectAllIndexes()" style="padding:4px 12px; font-size:12px;">Deselect All</button>
+          </div>
+          <div id="exportIndexList" style="max-height:300px; overflow-y:auto; border:1px solid #ddd; padding:12px; border-radius:4px; background:#f9f9f9;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block; margin-bottom:4px; font-weight:500;">Export Format:</label>
+          <select id="exportFormat" style="padding:8px; font-size:14px; width:100%;">
+            <option value="csv">CSV</option>
+            <option value="excel">Excel</option>
+          </select>
+        </div>
+
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <button type="button" onclick="closeExportModal()" style="padding:8px 16px;">Cancel</button>
+          <button type="button" onclick="performExport()" style="padding:8px 16px; background:#0066cc; color:white;">Export</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart Modal -->
+    <div id="chartModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; overflow:auto;">
+      <div style="position:relative; top:4%; margin:auto; max-width:1200px; background:white; padding:20px; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 style="margin:0;">Index Trends by Week</h3>
+          <button type="button" onclick="closeChartModal()" style="padding:6px 12px;">Close</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns:280px 1fr; gap:16px; align-items:start;">
+          <div>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+              <button type="button" onclick="selectAllChartIndexes()" style="padding:4px 10px; font-size:12px;">Select All</button>
+              <button type="button" onclick="deselectAllChartIndexes()" style="padding:4px 10px; font-size:12px;">Deselect All</button>
+            </div>
+            <div id="chartIndexList" style="max-height:520px; overflow-y:auto; border:1px solid #ddd; border-radius:4px; padding:10px; background:#f9f9f9;"></div>
+          </div>
+
+          <div>
+            <div style="height:560px; border:1px solid #eee; border-radius:6px; padding:10px; background:#fff;">
+              <canvas id="indexTrendChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('authToken');
+    let indexes = [];
+    let weekData = [];
+    let isProcurementOrAdmin = false;
+    let trendChart = null;
+    let chartIndexNames = [];
+
+    function setStatus(message, type = 'muted') {
+      const el = document.getElementById('status');
+      el.className = `card ${type}`;
+      el.textContent = message;
+    }
+
+    function weekdayName(num) {
+      return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][Number(num)] || '-';
+    }
+
+    // Extract base name and variant from full index name
+    function parseIndexName(fullName) {
+      const match = fullName.match(/^(.*?)\s*(?:-|\s)\s*(Min|Mid|Max)\s*$/i);
+      if (match) {
+        return { baseName: match[1].trim(), variant: match[2].toUpperCase() };
+      }
+      return { baseName: fullName.trim(), variant: null };
+    }
+
+    function sortVariants(variants) {
+      const order = { 'MIN': 0, 'MID': 1, 'MAX': 2 };
+      return Array.from(variants).sort((a, b) => {
+        const aOrder = order[a] ?? 99;
+        const bOrder = order[b] ?? 99;
+        return aOrder - bOrder;
+      });
+    }
+
+    function getWeekDateRange(weekNumber, year) {
+      const simple = new Date(year, 0, 1 + (weekNumber - 1) * 7);
+      const dow = simple.getDay();
+      const ISOweekStart = simple;
+      if (dow <= 4) {
+        ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+      } else {
+        ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+      }
+      
+      const startDate = new Date(ISOweekStart);
+      const endDate = new Date(ISOweekStart);
+      endDate.setDate(ISOweekStart.getDate() + 6);
+      
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const startMonth = monthNames[startDate.getMonth()];
+      const endMonth = monthNames[endDate.getMonth()];
+      const startDay = startDate.getDate();
+      const endDay = endDate.getDate();
+      
+      if (startDate.getMonth() === endDate.getMonth()) {
+        return `${startMonth} ${startDay}-${endDay}/${year}`;
+      } else {
+        return `${startMonth} ${startDay}-${endMonth} ${endDay}/${year}`;
+      }
+    }
+
+    function updateHistoricalHeaderOffset() {
+      const thead = document.getElementById('historicalHead');
+      if (!thead) return;
+
+      const firstHeaderRow = thead.querySelector('tr:first-child');
+      if (!firstHeaderRow) return;
+
+      const firstRowHeight = Math.ceil(firstHeaderRow.getBoundingClientRect().height || 44);
+      thead.style.setProperty('--header-row1-height', `${firstRowHeight}px`);
+    }
+
+    function chartLabelForWeek(week) {
+      const weekNum = String(week.week).padStart(2, '0');
+      return `${week.year}-W${weekNum}`;
+    }
+
+    function getLatestValueForIndex(week, indexName) {
+      const indexData = week.indexes.find(i => i.name === indexName);
+      if (!indexData || !Array.isArray(indexData.values) || indexData.values.length === 0) {
+        return null;
+      }
+
+      const latestValue = indexData.values[indexData.values.length - 1]?.value;
+      if (latestValue === null || latestValue === undefined) {
+        return null;
+      }
+
+      const numeric = Number(latestValue);
+      return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    function getChartColor(indexName) {
+      let hash = 0;
+      for (let i = 0; i < indexName.length; i++) {
+        hash = indexName.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const hue = Math.abs(hash) % 360;
+      return `hsl(${hue}, 65%, 45%)`;
+    }
+
+    function getSortedWeeks() {
+      return [...weekData].sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.week - b.week;
+      });
+    }
+
+    function getChartSeriesNames(sortedWeeks) {
+      const names = new Set();
+      sortedWeeks.forEach(week => {
+        (week.indexes || []).forEach(idx => {
+          if (idx?.name) names.add(idx.name);
+        });
+      });
+
+      return Array.from(names)
+        .filter(name => sortedWeeks.some(week => getLatestValueForIndex(week, name) !== null))
+        .sort((a, b) => a.localeCompare(b));
+    }
+
+    function populateChartIndexList() {
+      const container = document.getElementById('chartIndexList');
+      if (!container) return;
+
+      if (chartIndexNames.length === 0) {
+        container.innerHTML = '<div style="color:#777; font-size:13px;">No index series available for the selected years.</div>';
+        return;
+      }
+
+      container.innerHTML = chartIndexNames.map(name => {
+        const safeId = `chart-idx-${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+        return `
+          <label style="display:block; font-size:13px; padding:3px 0;">
+            <input type="checkbox" id="${safeId}" class="chart-index-checkbox" value="${name}" checked style="margin-right:8px;" onchange="renderTrendChart()" />
+            ${name}
+          </label>
+        `;
+      }).join('');
+    }
+
+    function getSelectedChartIndexes() {
+      return Array.from(document.querySelectorAll('.chart-index-checkbox:checked')).map(cb => cb.value);
+    }
+
+    function buildTrendDatasets(sortedWeeks, selectedNames) {
+      return selectedNames.map(name => {
+        const color = getChartColor(name);
+        return {
+          label: name,
+          data: sortedWeeks.map(week => getLatestValueForIndex(week, name)),
+          borderColor: color,
+          backgroundColor: color,
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          spanGaps: false,
+          tension: 0.2
+        };
+      });
+    }
+
+    function renderTrendChart() {
+      const canvas = document.getElementById('indexTrendChart');
+      if (!canvas) return;
+
+      const sortedWeeks = getSortedWeeks();
+      const labels = sortedWeeks.map(chartLabelForWeek);
+      const selectedNames = getSelectedChartIndexes();
+      const datasets = buildTrendDatasets(sortedWeeks, selectedNames);
+
+      if (trendChart) {
+        trendChart.destroy();
+        trendChart = null;
+      }
+
+      trendChart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'nearest', intersect: false },
+          plugins: {
+            legend: { display: true, position: 'bottom' },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: 'Week' },
+              ticks: { maxRotation: 60, minRotation: 45, autoSkip: true, maxTicksLimit: 20 }
+            },
+            y: {
+              title: { display: true, text: 'Index Value' },
+              beginAtZero: false
+            }
+          }
+        }
+      });
+    }
+
+    function selectAllChartIndexes() {
+      document.querySelectorAll('.chart-index-checkbox').forEach(cb => cb.checked = true);
+      renderTrendChart();
+    }
+
+    function deselectAllChartIndexes() {
+      document.querySelectorAll('.chart-index-checkbox').forEach(cb => cb.checked = false);
+      renderTrendChart();
+    }
+
+    function openChartModal() {
+      if (!Array.isArray(weekData) || weekData.length === 0) {
+        setStatus('Load historical data first, then open chart.', 'danger');
+        return;
+      }
+
+      const sortedWeeks = getSortedWeeks();
+      chartIndexNames = getChartSeriesNames(sortedWeeks);
+      populateChartIndexList();
+      document.getElementById('chartModal').style.display = 'block';
+      renderTrendChart();
+    }
+
+    function closeChartModal() {
+      document.getElementById('chartModal').style.display = 'none';
+      if (trendChart) {
+        trendChart.destroy();
+        trendChart = null;
+      }
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          ...(options.headers || {})
+        }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) {
+          localStorage.removeItem('authToken');
+          window.location.href = '/login.html';
+          return;
+        }
+        throw new Error(data.error || data.message || `HTTP ${res.status}`);
+      }
+      return data;
+    }
+
+    async function loadUserGroupAccess() {
+      try {
+        const groups = await api('/api/auth/me/groups');
+        isProcurementOrAdmin = Array.isArray(groups)
+          ? groups.some(group => {
+              const groupName = String(group?.name || '').toLowerCase();
+              return groupName === 'admin' || groupName === 'procurement';
+            })
+          : false;
+        
+        // Show Index Management button if user is in Admin or Procurement group
+        if (isProcurementOrAdmin) {
+          document.getElementById('adminButton').style.display = 'inline-block';
+        }
+      } catch (err) {
+        isProcurementOrAdmin = false;
+        console.warn('Could not determine group membership:', err.message);
+      }
+    }
+
+    async function loadIndexes() {
+      const data = await api('/api/admin/polymer-indexes?includeInactive=false');
+      indexes = data.indexes || [];
+    }
+
+    async function loadHistoricalData() {
+      try {
+        setStatus('Loading historical data...');
+        const startYear = Number(document.getElementById('yearStart').value);
+        const endYear = Number(document.getElementById('yearEnd').value);
+
+        if (startYear > endYear) {
+          return setStatus('Start year must be <= End year', 'danger');
+        }
+
+        const response = await api(`/api/admin/polymer-indexes/data/by-week?startYear=${startYear}&endYear=${endYear}`);
+        weekData = response.weeks || [];
+
+        renderHistoricalTable();
+        setStatus('Historical data loaded', 'ok');
+      } catch (err) {
+        setStatus(`Error loading historical data: ${err.message}`, 'danger');
+      }
+    }
+
+    function renderHistoricalTable() {
+      const thead = document.getElementById('historicalHead');
+      const tbody = document.getElementById('historicalBody');
+      thead.innerHTML = '';
+      tbody.innerHTML = '';
+
+      if (weekData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#999; padding:20px;">No data for the selected year range</td></tr>';
+        return;
+      }
+
+      // Get active indexes from week data
+      const indexMap = new Map();
+      weekData.forEach(week => {
+        week.indexes.forEach(idx => {
+          if (!indexMap.has(idx.name)) {
+            indexMap.set(idx.name, {
+              name: idx.name,
+              unit: idx.unit,
+              currency: idx.currency,
+              publish_weekday: idx.publish_weekday
+            });
+          }
+        });
+      });
+
+      const allIndexes = Array.from(indexMap.values());
+      
+      // Group indexes by base name
+      const baseGroups = new Map();
+      allIndexes.forEach(idx => {
+        const { baseName, variant } = parseIndexName(idx.name);
+        if (!baseGroups.has(baseName)) {
+          baseGroups.set(baseName, []);
+        }
+        baseGroups.get(baseName).push({ ...idx, variant });
+      });
+
+      // Build header row 1: Index names
+      let headerRow1 = '<tr><th class="week-col" rowspan="2" style="text-align:center;">Week</th>';
+      
+      for (const [baseName, variants] of baseGroups) {
+        const sortedVariants = variants.sort((a, b) => {
+          const order = { 'MIN': 0, 'MID': 1, 'MAX': 2 };
+          return (order[a.variant] ?? 99) - (order[b.variant] ?? 99);
+        });
+        
+        // Each variant gets a "Date" column + the variant columns
+        const colCount = 1 + sortedVariants.length; // 1 for Date + variant count
+        const idx = sortedVariants[0];
+        const pubWeekday = weekdayName(idx.publish_weekday) || '-';
+        const unit = idx.unit || '-';
+        const currency = idx.currency || '-';
+        headerRow1 += `<th colspan="${colCount}" class="index-group" style="text-align:center; border-bottom: 1px solid #ccc;">`;
+        headerRow1 += `<span style="font-size:14px; font-weight:700;">${baseName}</span><br><span style="font-size:10px; color:#666;">${pubWeekday} | ${unit} ${currency}</span>`;
+        headerRow1 += `</th>`;
+      }
+      headerRow1 += '</tr>';
+
+      // Build header row 2: "Date" + Variant names
+      let headerRow2 = '<tr>';
+      for (const [baseName, variants] of baseGroups) {
+        const sortedVariants = variants.sort((a, b) => {
+          const order = { 'MIN': 0, 'MID': 1, 'MAX': 2 };
+          return (order[a.variant] ?? 99) - (order[b.variant] ?? 99);
+        });
+        
+        // Always add "Date" first
+        headerRow2 += `<th style="font-size:11px; color:#555; background-color:#f8f9fa; padding:4px 8px;">Date</th>`;
+        
+        // Then add variant names
+        sortedVariants.forEach(v => {
+          const variantName = v.variant || '-';
+          headerRow2 += `<th style="font-size:11px; color:#555; background-color:#f8f9fa; padding:4px 8px;">${variantName}</th>`;
+        });
+      }
+      headerRow2 += '</tr>';
+
+      thead.innerHTML = headerRow1 + headerRow2;
+      requestAnimationFrame(updateHistoricalHeaderOffset);
+
+      // Build body rows
+      const bodyRows = [];
+      weekData.forEach(week => {
+        let valueRow = `<td class="week-label" style="font-weight:600; background-color:#f0f4f8; text-align:center;">${week.week}/${week.year}</td>`;
+        
+        for (const [baseName, variants] of baseGroups) {
+          const sortedVariants = variants.sort((a, b) => {
+            const order = { 'MIN': 0, 'MID': 1, 'MAX': 2 };
+            return (order[a.variant] ?? 99) - (order[b.variant] ?? 99);
+          });
+          
+          // Get the date from the first variant's latest value (all variants in a group have same date)
+          let dateDisplay = '-';
+          const firstIndex = sortedVariants[0];
+          const firstIndexData = week.indexes.find(i => i.name === firstIndex.name);
+          if (firstIndexData && firstIndexData.values && firstIndexData.values.length > 0) {
+            const latestValue = firstIndexData.values[firstIndexData.values.length - 1];
+            const dateObj = new Date(latestValue.date + 'T00:00:00Z');
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            dateDisplay = `${monthNames[dateObj.getUTCMonth()]} ${dateObj.getUTCDate()}`;
+          }
+          
+          // Date column
+          valueRow += `<td style="padding:4px 8px; text-align:center; background-color:#fafbfc; font-size:12px; color:#666; white-space:nowrap;">${dateDisplay}</td>`;
+          
+          // Variant value columns
+          sortedVariants.forEach(v => {
+            const indexData = week.indexes.find(i => i.name === v.name);
+            if (indexData && indexData.values && indexData.values.length > 0) {
+              const latestValue = indexData.values[indexData.values.length - 1];
+              const val = latestValue.value;
+              
+              const cellClass = (val === null || val === 0) ? 'zero' : 'nonzero';
+              const displayVal = (val === null || val === 0) ? '-' : Number(val).toFixed(2);
+              
+              valueRow += `<td class="${cellClass}" style="padding:4px 8px; text-align:right;">${displayVal}</td>`;
+            } else {
+              valueRow += '<td class="zero" style="padding:4px 8px; text-align:center;">-</td>';
+            }
+          });
+        }
+        
+        bodyRows.push(`<tr>${valueRow}</tr>`);
+      });
+
+      tbody.innerHTML = bodyRows.join('');
+    }
+
+    function openExportModal() {
+      // Set default date range (last 90 days)
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 90);
+      
+      document.getElementById('exportStartDate').value = startDate.toISOString().split('T')[0];
+      document.getElementById('exportEndDate').value = endDate.toISOString().split('T')[0];
+      
+      populateExportIndexList();
+      document.getElementById('exportModal').style.display = 'block';
+    }
+
+    function closeExportModal() {
+      document.getElementById('exportModal').style.display = 'none';
+    }
+
+    function populateExportIndexList() {
+      const container = document.getElementById('exportIndexList');
+      const activeIndexes = indexes.filter(idx => idx.is_active);
+      
+      if (activeIndexes.length === 0) {
+        container.innerHTML = '<div style="color:#999; padding:8px;">No active indexes available</div>';
+        return;
+      }
+      
+      // Group by base name
+      const groups = new Map();
+      activeIndexes.forEach(idx => {
+        const { baseName, variant } = parseIndexName(idx.name);
+        if (!groups.has(baseName)) {
+          groups.set(baseName, []);
+        }
+        groups.get(baseName).push({ ...idx, variant });
+      });
+      
+      let html = '';
+      for (const [baseName, variants] of Array.from(groups.entries()).sort()) {
+        html += `<div style="margin-bottom:12px;">`;
+        html += `<div style="font-weight:600; margin-bottom:4px; color:#333;">${baseName}</div>`;
+        
+        const sortedVariants = sortVariants(variants.map(v => v.variant || ''));
+        sortedVariants.forEach(variantName => {
+          const idx = variants.find(v => (v.variant || '') === variantName);
+          if (idx) {
+            const displayName = variantName ? `${baseName} ${variantName}` : baseName;
+            html += `<label style="display:block; padding:4px 0; margin-left:16px;">`;
+            html += `<input type="checkbox" value="${idx.id}" class="export-index-checkbox" checked style="margin-right:8px;">`;
+            html += `<span style="font-size:13px;">${variantName || 'Base'} (${idx.unit} ${idx.currency})</span>`;
+            html += `</label>`;
+          }
+        });
+        
+        html += `</div>`;
+      }
+      
+      container.innerHTML = html;
+    }
+
+    function selectAllIndexes() {
+      document.querySelectorAll('.export-index-checkbox').forEach(cb => cb.checked = true);
+    }
+
+    function deselectAllIndexes() {
+      document.querySelectorAll('.export-index-checkbox').forEach(cb => cb.checked = false);
+    }
+
+    function performExport() {
+      try {
+        const startDate = document.getElementById('exportStartDate').value;
+        const endDate = document.getElementById('exportEndDate').value;
+        const format = document.getElementById('exportFormat').value;
+        
+        if (!startDate || !endDate) {
+          return setStatus('Please select date range', 'danger');
+        }
+        
+        if (startDate > endDate) {
+          return setStatus('Start date must be before or equal to end date', 'danger');
+        }
+        
+        // Get selected index IDs
+        const selectedIndexIds = Array.from(document.querySelectorAll('.export-index-checkbox:checked'))
+          .map(cb => cb.value);
+        
+        if (selectedIndexIds.length === 0) {
+          return setStatus('Please select at least one index', 'danger');
+        }
+        
+        // Filter indexes
+        const selectedIndexes = indexes.filter(idx => selectedIndexIds.includes(idx.id));
+        
+        // Build export data
+        const exportData = [];
+        exportData.push(['Week', 'Year', 'Index', 'Variant', 'Date', 'Value', 'Unit', 'Currency']);
+        
+        // Data rows
+        for (const week of weekData) {
+          for (const indexData of week.indexes) {
+            const idx = selectedIndexes.find(i => i.name === indexData.name);
+            if (!idx) continue;
+
+            const { baseName, variant } = parseIndexName(idx.name);
+
+            for (const val of indexData.values) {
+              if (!val.date) continue;
+              if (val.date < startDate || val.date > endDate) continue;
+
+              exportData.push([
+                week.week,
+                week.year,
+                baseName,
+                variant || '',
+                val.date,
+                val.value !== null ? val.value : '',
+                idx.unit || '',
+                idx.currency || ''
+              ]);
+            }
+          }
+        }
+
+        if (exportData.length === 1) {
+          return setStatus('No data found in the selected date range', 'danger');
+        }
+
+        // Export based on format
+        if (format === 'csv') {
+          exportToCSV(exportData);
+        } else {
+          exportToExcel(exportData);
+        }
+
+        setStatus(`Exported ${exportData.length - 1} records successfully`, 'ok');
+        closeExportModal();
+      } catch (err) {
+        console.error('Export error:', err);
+        setStatus(`Export failed: ${err.message}`, 'danger');
+      }
+    }
+
+    function exportToCSV(data) {
+      const csvContent = data.map(row => 
+        row.map(cell => {
+          const cellStr = String(cell);
+          if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+            return '"' + cellStr.replace(/"/g, '""') + '"';
+          }
+          return cellStr;
+        }).join(',')
+      ).join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `polymer_indexes_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function exportToExcel(data) {
+      // Create the worksheet first with string data
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      
+      // Convert date column cells to proper Excel date format
+      // Column E (index 4) contains dates in YYYY-MM-DD format
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let row = range.s.r + 1; row <= range.e.r; row++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: 4 });
+        const cell = ws[cellAddress];
+        
+        if (cell && cell.v) {
+          // Parse YYYY-MM-DD string to Date object
+          const dateStr = String(cell.v);
+          const dateParts = dateStr.split('-');
+          
+          if (dateParts.length === 3) {
+            const year = parseInt(dateParts[0]);
+            const month = parseInt(dateParts[1]) - 1; // JS months are 0-indexed
+            const day = parseInt(dateParts[2]);
+            
+            // Create Date object and set it as the cell value
+            const dateObj = new Date(year, month, day);
+            
+            // Set cell properties for Excel date
+            cell.t = 'n'; // Number type (dates are stored as numbers in Excel)
+            cell.v = (dateObj.getTime() - new Date(1899, 11, 30).getTime()) / (24 * 60 * 60 * 1000); // Excel serial date
+            cell.z = 'yyyy-mm-dd'; // Display format
+          }
+        }
+      }
+      
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Polymer Indexes');
+      
+      XLSX.writeFile(wb, `polymer_indexes_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+
+    async function confirmClearAllData() {
+      const confirmMessage = "⚠️ WARNING: This will permanently delete ALL historical index values from the database.\n\n" +
+                             "This action CANNOT be undone!\n\n" +
+                             "Are you absolutely sure you want to continue?";
+      
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+
+      // Double confirmation
+      const doubleConfirm = prompt('Type "DELETE ALL DATA" to confirm:');
+      if (doubleConfirm !== 'DELETE ALL DATA') {
+        alert('Deletion cancelled. Text did not match.');
+        return;
+      }
+
+      try {
+        setStatus('Deleting all index values...', 'danger');
+        
+        const response = await fetch('/api/admin/polymer-indexes/data/all', {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to clear data');
+        }
+
+        setStatus(`✓ Successfully deleted ${data.deletedCount} index values`, 'ok');
+        alert(`Successfully deleted ${data.deletedCount} index values from the database.`);
+        
+        // Reload the page data
+        await loadHistoricalData();
+      } catch (err) {
+        setStatus(`Error: ${err.message}`, 'danger');
+        alert(`Error: ${err.message}`);
+      }
+    }
+
+    async function init() {
+      if (!token) {
+        window.location.href = '/login.html';
+        return;
+      }
+
+      window.addEventListener('resize', updateHistoricalHeaderOffset);
+
+      try {
+        setStatus('Loading data...');
+        await loadUserGroupAccess();
+        await loadIndexes();
+        await loadHistoricalData();
+        setStatus('Ready', 'ok');
+      } catch (err) {
+        setStatus(`Error: ${err.message}`, 'danger');
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

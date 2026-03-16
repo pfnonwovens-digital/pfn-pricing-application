@@ -424,6 +424,70 @@
       box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
     }
 
+    /* Calculation Logic Panel */
+    .calc-logic-panel {
+      margin-bottom: 16px;
+      border: 1px solid #c3dafe;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .calc-logic-panel summary {
+      cursor: pointer;
+      background: #ebf4ff;
+      padding: 10px 14px;
+      font-weight: 600;
+      font-size: 13px;
+      color: #2b6cb0;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .calc-logic-panel summary::-webkit-details-marker { display: none; }
+
+    .calc-logic-panel summary::before {
+      content: '▶';
+      font-size: 10px;
+      transition: transform 0.2s;
+    }
+
+    .calc-logic-panel[open] summary::before { transform: rotate(90deg); }
+
+    .calc-logic-body {
+      padding: 14px 18px;
+      background: #f7faff;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .calc-logic-body h4 {
+      margin: 12px 0 4px;
+      font-size: 13px;
+      color: #2d3748;
+    }
+
+    .calc-logic-body h4:first-child { margin-top: 0; }
+
+    .calc-formula {
+      background: #fff;
+      border-left: 3px solid #4299e1;
+      padding: 6px 12px;
+      margin: 4px 0;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12.5px;
+      color: #1a365d;
+      border-radius: 0 4px 4px 0;
+    }
+
+    .calc-note {
+      font-size: 12px;
+      color: #718096;
+      margin-top: 2px;
+    }
+
     .results-table {
       width: 100%;
       border-collapse: collapse;
@@ -527,12 +591,12 @@
     }
 
     .btn-primary {
-      background: #667eea;
+      background: #4f6fb8;
       color: white;
     }
 
     .btn-primary:hover {
-      background: #5568d3;
+      background: #435f9f;
     }
 
     .btn-secondary {
@@ -554,12 +618,12 @@
     }
 
     .btn-success {
-      background: #28a745;
+      background: #3f7f5f;
       color: white;
     }
 
     .btn-success:hover {
-      background: #218838;
+      background: #356a50;
     }
 
     .dataset-list {
@@ -877,11 +941,11 @@
           <input type="number" id="beltSpeed" placeholder="Belt Speed (m/min)" step="0.1" min="0" />
         </div>
         <div class="input-field">
-          <label for="maxUsableWidth">Max usable width (brutto, %)</label>
+          <label for="maxUsableWidth">Max usable width (brutto, m)</label>
           <input type="number" id="maxUsableWidth" placeholder="Max usable width (brutto)" step="1" min="0" />
         </div>
         <div class="input-field">
-          <label for="usableWidth">Usable width (netto, %)</label>
+          <label for="usableWidth">Usable width (netto, m)</label>
           <input type="number" id="usableWidth" placeholder="Usable width (netto)" step="1" min="0" />
         </div>
         <div class="input-field">
@@ -891,10 +955,6 @@
         <div class="input-field">
           <label for="webLossPercent">Web loss (%)</label>
           <input type="number" id="webLossPercent" placeholder="%" step="0.01" min="0" />
-        </div>
-        <div class="input-field">
-          <label for="changeoverLossPercent">Changeover loss (%)</label>
-          <input type="number" id="changeoverLossPercent" placeholder="%" step="0.01" min="0" />
         </div>
         <div class="input-field">
           <label for="otherScrapPercent">Other scrap (%)</label>
@@ -1346,6 +1406,42 @@
     <!-- Results -->
     <div class="section" id="resultsSection" style="display: none;">
       <h2>Calculation Results</h2>
+
+      <details class="calc-logic-panel">
+        <summary>Calculation Logic — Raw Material Consumption</summary>
+        <div class="calc-logic-body">
+
+          <h4>1 · Per-beam GSM contribution (solid materials: Polymer / Pigment / Additive)</h4>
+          <div class="calc-formula">contribution = (material_% / 100) &times; beam_GSM</div>
+          <div class="calc-formula">contribution<sub>bico</sub> = (material_% / 100) &times; beam_GSM &times; (bico_ratio_% / 100)</div>
+          <div class="calc-note">Applied per column. Bico beams 1, 2, 7, 8 use the A/B split ratio. Mono beams 3–6 use factor = 1.</div>
+
+          <h4>2 · Net polymer percentage (primary polymer per column)</h4>
+          <div class="calc-formula">polymer_% = input_% &minus; &sum;(pigment_%) &minus; &sum;(additive_%)</div>
+          <div class="calc-note">Pigment and Additive are expressed as % of the polymer stream, so their weight is already included in the polymer input. They are backed out before distributing the remaining polymer mass.</div>
+
+          <h4>3 · Material weight fraction</h4>
+          <div class="calc-formula">fraction = &sum;(contributions across all active columns) / total_beam_GSM</div>
+          <div class="calc-note">total_beam_GSM = sum of all per-beam GSM values entered in the beams table.</div>
+
+          <h4>4 · Consumption (Polymer / Pigment / Additive)</h4>
+          <div class="calc-formula">consumption = target_production &times; fraction &times; (1 + overconsumption_% / 100)</div>
+
+          <h4>5 · Surfactant consumption</h4>
+          <div class="calc-formula">consumption = target_production &times; concentration &times; (OPU_% / 100) &times; (1 + overconsumption_% / 100)</div>
+          <div class="calc-note">Concentration is the surfactant&rsquo;s active-substance fraction. OPU (On-Product Use) is the application rate as % of fabric weight.</div>
+
+          <h4>6 · Siko &amp; Repro consumption</h4>
+          <div class="calc-formula">consumption = target_production &times; (siko_% / 100) &times; (1 + overconsumption_% / 100)</div>
+          <div class="calc-note">Siko and Repro reduce the virgin polymer requirement. Their combined weight is subtracted from the primary SB polymer in the results.</div>
+
+          <h4>7 · Batch production time</h4>
+          <div class="calc-formula">time (h) = (1 + overconsumption_% / 100) &times; target_production (tons) &times; production_time (h/ton)</div>
+          <div class="calc-note">Production time per ton is derived from total line throughput (kg/h) and yield.</div>
+
+        </div>
+      </details>
+
       <table class="results-table" id="resultsTable">
         <thead>
           <tr>
@@ -1840,7 +1936,7 @@
         'customer', 'marketSegment', 'application', 'smms', 'monoBico', 'structure',
         'mainRawMat', 'bonding', 'totalGSM', 'beltBW', 'mbGrams', 'bicoRatioDesc',
         'treatment', 'color', 'sikoPercent', 'reproPercent', 'line', 'beltSpeed',
-        'maxUsableWidth', 'usableWidth', 'webLossPercent', 'changeoverLossPercent',
+        'maxUsableWidth', 'usableWidth', 'webLossPercent',
         'targetProduction'
       ];
 
@@ -1870,7 +1966,7 @@
         'customer', 'marketSegment', 'application', 'smms', 'monoBico', 'structure',
         'mainRawMat', 'bonding', 'totalGSM', 'beltBW', 'mbGrams', 'bicoRatioDesc',
         'treatment', 'color', 'sikoPercent', 'reproPercent', 'line', 'beltSpeed',
-        'maxUsableWidth', 'usableWidth', 'webLossPercent', 'changeoverLossPercent',
+        'maxUsableWidth', 'usableWidth', 'webLossPercent',
         'targetProduction'
       ];
 
@@ -2404,7 +2500,6 @@
       const maxUsableWidth = parseFloat(document.getElementById('maxUsableWidth').value) || 0;
       const usableWidthNetto = parseFloat(document.getElementById('usableWidth').value) || 0;
       const webLoss = parseFloat(document.getElementById('webLossPercent').value) || 0;
-      const changeoverLoss = parseFloat(document.getElementById('changeoverLossPercent').value) || 0;
       const otherScrap = parseFloat(document.getElementById('otherScrapPercent').value) || 0;
 
       // Calculate Edge trim (%) = (1 - (usableWidthNetto / maxUsableWidth)) * 100
@@ -2414,8 +2509,8 @@
       }
       document.getElementById('edgeTrimPercent').value = edgeTrim.toFixed(2);
 
-      // Calculate Total Scrap (%) = Edge trim + Web loss + Changeover loss + Other scrap
-      const totalScrap = edgeTrim + webLoss + changeoverLoss + otherScrap;
+      // Calculate Total Scrap (%) = Edge trim + Web loss + Other scrap
+      const totalScrap = edgeTrim + webLoss + otherScrap;
       document.getElementById('totalScrapPercent').value = totalScrap.toFixed(2);
 
       // Calculate Gross Yield (%) = 100 - Total Scrap (%)
@@ -2428,7 +2523,6 @@
       document.getElementById('maxUsableWidth').addEventListener('input', calculateScrapPercentages);
       document.getElementById('usableWidth').addEventListener('input', calculateScrapPercentages);
       document.getElementById('webLossPercent').addEventListener('input', calculateScrapPercentages);
-      document.getElementById('changeoverLossPercent').addEventListener('input', calculateScrapPercentages);
       document.getElementById('otherScrapPercent').addEventListener('input', calculateScrapPercentages);
 
       // Initial calculation
@@ -2869,7 +2963,7 @@
         'color', 'cores', 'line', 'lineWidth', 'adjustedEffectiveWidth', 'lineConfiguration', 'slitWidth', 'beltBW',
         'mbGrams', 'lengthMeters', 'rollDiameter', 'sikoPercent', 'reproPercent',
         'beltSpeed', 'maxUsableWidth', 'usableWidth', 'webLossPercent', 
-        'changeoverLossPercent', 'otherScrapPercent', 'edgeTrimPercent', 'totalScrapPercent', 
+        'otherScrapPercent', 'edgeTrimPercent', 'totalScrapPercent', 
         'grossYieldPercent', 'sBeams', 'mBeams', 'sbEffectiveWidth', 'mbEffectiveWidth',
         'sbMaxThroughput', 'mbMaxThroughput', 'spinBeltMaxSpeed', 'sbThroughput', 'mbThroughput', 'totalThroughput', 'productionTime'
       ];
