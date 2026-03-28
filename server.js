@@ -506,6 +506,32 @@ function getRecipeMailTransportConfig() {
   };
 }
 
+function getRecipeMailConfigStatus() {
+  const host = getFirstEnvValue(["SMTP_HOST", "MAIL_HOST"]);
+  const user = getFirstEnvValue(["SMTP_USER", "SMTP_USERNAME", "MAIL_USER", "MAIL_USERNAME"]);
+  const pass = getFirstEnvValue(["SMTP_PASS", "SMTP_PASSWORD", "MAIL_PASS", "MAIL_PASSWORD"]);
+  const from = getRecipeMailFromAddress();
+  const port = Number(getFirstEnvValue(["SMTP_PORT", "MAIL_PORT"]) || 587);
+  const secure = parseBooleanEnv(getFirstEnvValue(["SMTP_SECURE", "MAIL_SECURE"]), port === 465);
+
+  const missing = [];
+  if (!host) missing.push("SMTP_HOST/MAIL_HOST");
+  if (!user) missing.push("SMTP_USER/SMTP_USERNAME/MAIL_USER/MAIL_USERNAME");
+  if (!pass) missing.push("SMTP_PASS/SMTP_PASSWORD/MAIL_PASS/MAIL_PASSWORD");
+  if (!from) missing.push("RECIPE_FROM_EMAIL/SMTP_FROM_EMAIL/MAIL_FROM/MAIL_FROM_EMAIL/SMTP_USER/SMTP_USERNAME");
+
+  return {
+    configured: missing.length === 0,
+    missing,
+    hostConfigured: !!host,
+    userConfigured: !!user,
+    passConfigured: !!pass,
+    fromConfigured: !!from,
+    port,
+    secure
+  };
+}
+
 async function resolveRecipeApprovalRecipientEmails() {
   const configured = getFirstEnvValue([
     "RECIPE_APPROVAL_NOTIFY_TO",
@@ -2156,7 +2182,17 @@ app.get('/vendor/xlsx.full.min.js', (req, res) => {
 
 // Health check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  const mail = getRecipeMailConfigStatus();
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    email: {
+      configured: mail.configured,
+      missing: mail.missing,
+      port: mail.port,
+      secure: mail.secure
+    }
+  });
 });
 
 // ==================== AUTHENTICATION ENDPOINTS ====================
@@ -4613,8 +4649,14 @@ async function startServer() {
     await initializeStartupStores();
 
     app.listen(PORT, () => {
+      const mailStatus = getRecipeMailConfigStatus();
       console.log(`✓ Server running at http://localhost:${PORT}`);
       console.log(`✓ Database initialized at ${path.join(__dirname, 'data', 'mini_erp.db')}`);
+      if (mailStatus.configured) {
+        console.log(`[STARTUP] Email transport configured (port=${mailStatus.port}, secure=${mailStatus.secure})`);
+      } else {
+        console.warn(`[STARTUP] Email transport NOT configured. Missing env(s): ${mailStatus.missing.join(', ')}`);
+      }
       console.log(``);
       console.log(`Frontend routes:`);
       console.log(`  - GET / → /login.html (redirect)`);

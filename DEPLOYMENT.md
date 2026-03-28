@@ -39,16 +39,34 @@ Required:
 
 - `NODE_ENV=production`
 - `JWT_SECRET` (must be explicitly set)
+- `SMTP_HOST` (or `MAIL_HOST`)
+- `SMTP_PORT` (usually `587`)
+- `SMTP_SECURE` (`false` for port 587, `true` for 465)
+- `SMTP_USER` (or `SMTP_USERNAME`)
+- `SMTP_PASS` (or `SMTP_PASSWORD`)
+- `SMTP_FROM_EMAIL` (or `RECIPE_FROM_EMAIL`)
 
 Optional:
 
 - `PORT` (App Service usually sets this automatically)
+- `SMTP_TLS_REJECT_UNAUTHORIZED` (`true` by default)
+- `RECIPE_APPROVAL_NOTIFY_TO` (fallback recipients if region matrix has no assignee)
+- `RECIPE_SUBMISSION_NOTIFY_TO` (fallback recipients)
+- `APPROVAL_NOTIFY_TO` (fallback recipients)
+
+Azure App Service email notes:
+
+- Prefer authenticated SMTP on port `587` with STARTTLS.
+- Do not use port `25` (often blocked/restricted).
+- After changing App Settings, restart the Web App.
+- Verify config via `GET /api/health` and check the `email` section.
 
 ## Operational Checks
 
 After deployment verify:
 
 - `GET /api/health` returns 200
+- `GET /api/health` shows `email.configured=true`
 - Login flow works
 - Dashboard loads
 - BOM calculator and recipe browser load
