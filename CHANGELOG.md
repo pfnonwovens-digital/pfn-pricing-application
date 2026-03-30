@@ -22,12 +22,21 @@ All notable changes to the Mini ERP system are documented here. For current feat
 - Calculation Results percentage denominator is normalized to minimum batch size without surfactants.
 - Save WIP / Load WIP now reliably restores surfactant rows including concentration state used by calculations.
 - Recipe submission email routing now resolves approvers by recipe region (`CZ`, `EG`, `RSA`) and returns diagnostic fields (`emailSent`, `emailReason`).
+- Submission email routing now falls back to env recipients even when recipe line cannot be mapped to a known region.
+- BOM Calculator and Recipe Edit/Clone save feedback now displays submission email diagnostics (`emailSent`, `emailReason`) in UI.
 - New BOM saves and Recipe Edit/Clone copies now receive server-assigned PD IDs from a contiguous series starting at `10000`.
 - The PD ID allocator reuses gaps from Admin-deleted recipes and ignores legacy recipe PD IDs below `10000`.
 - BOM Calculator PD ID field is now display-only; users no longer enter PD ID manually for new recipes.
 - Recipe Edit/Clone grid now shows immutable `Created` timestamp next to `Author` and `Updated`.
 - Recipe Edit/Clone rows now include an Admin-only `Delete` action; deleting a recipe also frees its PD ID for reuse.
 - Recipe decision emails to authors now omit SAP ID from subject/body and omit Recipe ID from the email body.
+- Recipe Edit/Clone detail popup now closes automatically after successful Save/Copy.
+- User-facing identifier wording is standardized to `PD ID` (replacing legacy label variants) across UI labels, export headers, and email bodies/subjects.
+
+#### Audit Logs
+- Improved Audit Logs table header contrast in Admin Access Management for better readability.
+- BOM record audit details now include `PD ID` so creation/clone/update/approval actions show recipe identifier context directly in Details.
+- Audit Logs details now also show record context fields (`Record`, `Source`, `New`, `Action`, `Decision`) when present.
 
 #### Admin Access Management
 - Added backend page-level permission model with `page:<page-key>:read` / `page:<page-key>:modify` tokens.

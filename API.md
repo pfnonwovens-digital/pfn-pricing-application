@@ -251,6 +251,9 @@ Response shape:
 - `GET /api/bom/recipe-summary/export` (auth required)
 - `PUT /api/bom/records/:id` (auth required)
 - `DELETE /api/bom/records/:id` (auth required, Admin group only)
+- `GET /api/bom/approvals/pending` (auth required)
+- `GET /api/bom/approvals/:id` (auth required)
+- `POST /api/bom/approvals/:id/action` (auth required)
 
 ### BOM Recipe Persistence
 
@@ -275,7 +278,7 @@ Response shape:
   - Optional immutable snapshot can be stored via `calculationSnapshot` in request body (`calculation_snapshot_json` in DB)
   - Server validates that total percentage of non-surfactant materials equals `100.00%` (surfactants are excluded from this check)
   - Submission email recipients are selected by recipe line region (`CZ` / `EG` / `RSA`) from the Admin Recipe Approval Region Matrix
-  - If no matrix assignee is found for the region, server can use env fallback list (`RECIPE_APPROVAL_NOTIFY_TO`, `RECIPE_SUBMISSION_NOTIFY_TO`, `APPROVAL_NOTIFY_TO`)
+  - If no matrix assignee is found for the region (or region cannot be resolved from line), server uses env fallback list (`RECIPE_APPROVAL_NOTIFY_TO`, `RECIPE_SUBMISSION_NOTIFY_TO`, `APPROVAL_NOTIFY_TO`)
   - Response includes `emailSent` and `emailReason` fields for notification diagnostics
   - Request body includes:
     - `record` object (description fields, throughput/scrap values, minimum batch size + unit, notes)
@@ -299,12 +302,28 @@ Response shape:
   - Restricted to users who belong to the `Admin` group
   - Deleting a recipe releases its auto-assigned `pd_id` back to the allocator for reuse
 
+### Recipe Approval Endpoints
+
+- `GET /api/bom/approvals/pending`
+  - Returns recipes waiting for review (`recipe_approved = "No"`)
+
+- `GET /api/bom/approvals/:id`
+  - Returns one pending recipe detail with materials and resolved `author_email`
+
+- `POST /api/bom/approvals/:id/action`
+  - Applies one of: `approve`, `revise` (Recommend Update), `reject`
+  - Comment is required
+  - Sends decision email to recipe author and returns diagnostics in response:
+    - `result.emailSent`
+    - `result.emailReason`
+
 ### BOM Recipe Summary Endpoints
 
 - `GET /api/bom/recipe-summary/metadata`
   - Returns filter metadata for recipe summary page:
     - `sapIds`, `pfnIds`, `customers`, `marketSegments`, `applications`, `smsOptions`, `bondings`,
       `basisWeights`, `slitWidths`, `treatments`, `authors`, `overconsumptions`, `lineIds`, `countries`, `currencies`
+  - Note: response key `pfnIds` is a backward-compatible API key; values represent PD IDs
   - Customer and description filter values are derived from persisted `bom_records` data, so they reflect shared-list renames after propagation
 
 - `GET /api/bom/recipe-summary`
@@ -313,6 +332,7 @@ Response shape:
   - Supports multi-value filters via query params:
     - `sapId`, `pfnId`, `customer`, `marketSegment`, `application`, `s_sms`, `bonding`,
       `basisWeight`, `slitWidth`, `treatment`, `author`, `lineId`, `country`, `overconsumption`
+  - Note: query param `pfnId` is backward-compatible and filters PD ID values
 
 - `GET /api/bom/recipe-summary/export`
   - Exports filtered summary as `csv` (default) or `xlsx`

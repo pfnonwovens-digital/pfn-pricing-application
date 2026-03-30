@@ -17,7 +17,7 @@ function loadProducts() {
 
   rows.forEach(row => {
     const sapId = row["SAP ID"];
-    const pfnId = row["PD ID"] || row["PFN ID"];
+    const pfnId = row["PD ID"];
     const customer = row["Customer"];
     const marketSegment = row["Market segment"];
     const application = row["Application"];

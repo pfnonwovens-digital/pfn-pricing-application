@@ -451,15 +451,14 @@ async function sendRecipeDecisionEmail({ toEmail, reviewerName, decisionLabel, c
   const transporter = nodemailer.createTransport(transportConfig);
   const from = process.env.APPROVAL_FROM_EMAIL || process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
 
-  const subject = `Recipe Decision: ${decisionLabel} | SAP ${recipeRecord.sap_id || "N/A"} | PFN ${recipeRecord.pd_id || "N/A"}`;
+  const subject = `Recipe Decision: ${decisionLabel} | PD ${recipeRecord.pd_id || "N/A"}`;
   const lines = [
     "Recipe approval update",
     "",
     `Decision: ${decisionLabel}`,
     `Reviewer: ${reviewerName || "Unknown"}`,
-    `Recipe ID: ${recipeRecord.id}`,
     `SAP ID: ${recipeRecord.sap_id || "N/A"}`,
-    `PFN ID: ${recipeRecord.pd_id || "N/A"}`,
+    `PD ID: ${recipeRecord.pd_id || "N/A"}`,
     `Customer: ${recipeRecord.customer || "N/A"}`,
     `Line: ${recipeRecord.line || "N/A"}`,
     "",
@@ -490,6 +489,136 @@ async function resolveAuthorEmailByUserId(userId) {
   } catch (_err) {
     return null;
   }
+}
+
+const RECIPE_APPROVAL_REGIONS = ['CZ', 'EG', 'RSA'];
+
+function getRegionFromLine(lineId) {
+  const plant = rmPrices.getPlantFromLine(lineId);
+  if (!plant) return null;
+  if (plant === 'ZA') return 'RSA';
+  return plant;
+}
+
+async function resolveApproversForRegion(region) {
+  try {
+    const rows = await db.all(
+      `SELECT u.email FROM users u
+       JOIN recipe_approval_region_assignments ra ON u.id = ra.user_id
+       WHERE ra.region = ? AND u.is_active = 1 AND u.email IS NOT NULL AND TRIM(u.email) != ''`,
+      [region]
+    );
+    const emails = rows.map(r => String(r.email).trim().toLowerCase()).filter(Boolean);
+    if (emails.length > 0) return emails;
+  } catch (_err) {
+    // fall through to env fallback
+  }
+
+  const fallbackStr = process.env.RECIPE_SUBMISSION_NOTIFY_TO
+    || process.env.RECIPE_APPROVAL_NOTIFY_TO
+    || process.env.APPROVAL_NOTIFY_TO
+    || '';
+  return fallbackStr.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+}
+
+async function sendRecipeSubmissionEmail({ recipeRecord, authorName, isClone = false }) {
+  const transportConfig = getRecipeMailTransportConfig();
+  if (!transportConfig) {
+    return { sent: false, reason: 'smtp_not_configured' };
+  }
+
+  const region = getRegionFromLine(recipeRecord.line);
+
+  let recipients;
+  try {
+    // Always resolve through helper so env fallback recipients are used
+    // even when the line cannot be mapped to a known region.
+    recipients = await resolveApproversForRegion(region);
+  } catch (_err) {
+    recipients = [];
+  }
+
+  if (recipients.length === 0) {
+    return { sent: false, reason: 'no_approver_configured' };
+  }
+
+  let nodemailer;
+  try {
+    nodemailer = require('nodemailer');
+  } catch (_err) {
+    return { sent: false, reason: 'nodemailer_not_installed' };
+  }
+
+  const transporter = nodemailer.createTransport(transportConfig);
+  const from = process.env.APPROVAL_FROM_EMAIL || process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+  const action = isClone ? 'cloned' : 'created';
+  const subject = `New Recipe Submission: PD ${recipeRecord.pd_id || 'N/A'} [${region || 'Unknown'}]`;
+  const bodyLines = [
+    `A new recipe has been ${action} and is awaiting approval.`,
+    '',
+    `PD ID: ${recipeRecord.pd_id || 'N/A'}`,
+    `Customer: ${recipeRecord.customer || 'N/A'}`,
+    `Line: ${recipeRecord.line || 'N/A'}`,
+    `Region: ${region || 'N/A'}`,
+    `Author: ${authorName || 'N/A'}`,
+    '',
+    'Open mini-ERP Recipe Approval to review.'
+  ];
+
+  try {
+    await transporter.sendMail({ from, to: recipients.join(', '), subject, text: bodyLines.join('\n') });
+    return { sent: true, recipients };
+  } catch (sendErr) {
+    return { sent: false, reason: sendErr.message || 'mail_send_failed' };
+  }
+}
+
+async function resolveAuditPdId(recordId, fallbackPdId = null) {
+  const fallback = normalizeText(fallbackPdId);
+  if (fallback) return fallback;
+
+  const numericId = Number(recordId);
+  if (!Number.isFinite(numericId)) return null;
+
+  try {
+    const current = await db.get('SELECT pd_id FROM bom_records WHERE id = ?', [numericId]);
+    const fromCurrent = normalizeText(current?.pd_id);
+    if (fromCurrent) return fromCurrent;
+  } catch (_err) {
+    // Continue with audit-log fallback.
+  }
+
+  try {
+    const rows = await db.all(
+      `SELECT details
+       FROM audit_logs
+       WHERE action IN ('BOM_RECORD_CREATED', 'BOM_RECORD_CLONED', 'BOM_RECORD_UPDATED', 'RECIPE_APPROVAL_ACTION', 'BOM_RECORD_DELETED')
+         AND details LIKE ?
+       ORDER BY timestamp DESC
+       LIMIT 50`,
+      [`%"recordId":${numericId}%`]
+    );
+
+    for (const row of rows || []) {
+      if (!row?.details) continue;
+
+      let parsed;
+      try {
+        parsed = JSON.parse(row.details);
+      } catch (_parseErr) {
+        continue;
+      }
+
+      if (Number(parsed?.recordId) !== numericId) continue;
+
+      const fromAudit = normalizeText(parsed?.pdId || parsed?.pd_id);
+      if (fromAudit) return fromAudit;
+    }
+  } catch (_err) {
+    // If fallback lookup fails, keep null to avoid breaking the action itself.
+  }
+
+  return null;
 }
 
 function computeBomRecipeCostItem({ record, recordMaterials, displayCurrency, dbMaterialPrices = {}, fx, lines, loaded }) {
@@ -1647,6 +1776,14 @@ async function ensureBomRecordStoreReady() {
           material_name TEXT NOT NULL,
           percentage REAL NOT NULL,
           FOREIGN KEY (record_id) REFERENCES bom_records(id) ON DELETE CASCADE
+        )
+      `);
+
+      await db.run(`
+        CREATE TABLE IF NOT EXISTS recipe_approval_region_assignments (
+          user_id INTEGER NOT NULL,
+          region TEXT NOT NULL,
+          PRIMARY KEY (user_id, region)
         )
       `);
     })();
@@ -3051,7 +3188,6 @@ function validateAndNormalizeBomMaterials(materials) {
     throw error;
   }
 
-  let total = 0;
   const normalized = materials.map((raw, index) => {
     const percentage = Number(raw?.percentage);
     if (!Number.isFinite(percentage) || percentage < 0) {
@@ -3059,8 +3195,6 @@ function validateAndNormalizeBomMaterials(materials) {
       error.statusCode = 400;
       throw error;
     }
-
-    total += percentage;
 
     return {
       material_label: normalizeText(raw?.material_label),
@@ -3070,8 +3204,13 @@ function validateAndNormalizeBomMaterials(materials) {
     };
   });
 
+  // Validate total percentage of non-surfactant materials must equal 100%
+  // (Surfactants evaporate during production, so they are excluded from percentage sum)
+  const nonSurfactants = normalized.filter(mat => mat.material_label !== 'Surfactant');
+  const total = nonSurfactants.reduce((sum, mat) => sum + mat.percentage, 0);
+
   if (Math.abs(total - 100) > 0.01) {
-    const error = new Error(`BOM percentages must sum to 100.00% (current total: ${total.toFixed(2)}%).`);
+    const error = new Error(`BOM percentages (excluding surfactants) must sum to 100.00% (current total: ${total.toFixed(2)}%).`);
     error.statusCode = 400;
     throw error;
   }
@@ -3177,6 +3316,18 @@ function requireBomRecordWrite(req, res, next) {
       console.error("bom record write permission check failed:", err);
       return res.status(500).json({ error: "Failed to verify permissions" });
     });
+}
+
+function requireBomRecordDelete(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  if (!auth.hasPermission(req.user.role, "user:manage")) {
+    return res.status(403).json({ error: "Insufficient permissions" });
+  }
+
+  return next();
 }
 
 app.get("/api/bom/edit-clone/metadata", auth.authMiddleware, requireRecipeEditCloneRead, async (req, res) => {
@@ -3370,23 +3521,25 @@ app.post("/api/bom/records", auth.authMiddleware, requireBomRecordWrite, async (
       return res.status(409).json({ error: 'Duplicate recipe exists for this SAP ID and Line. Please use another SAP ID/Line combination.' });
     }
 
-    await db.run('BEGIN IMMEDIATE');
-    try {
-      // Generate explicit parent ID so child inserts never depend on driver-specific lastID behavior.
-      let recordId = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const candidate = (Date.now() * 1000) + Math.floor(Math.random() * 1000);
-        const existing = await db.get('SELECT id FROM bom_records WHERE id = ?', [candidate]);
-        if (!existing) {
-          recordId = candidate;
-          break;
-        }
-      }
-      if (!recordId) {
-        throw new Error('Unable to allocate BOM record ID.');
-      }
+    // Allocate PD ID and record ID BEFORE opening the transaction to avoid
+    // running SELECTs inside a BEGIN IMMEDIATE lock (node-sqlite3 serialized mode).
+    const assignedPdId = await allocateNextBomPdId();
 
-      const assignedPdId = await allocateNextBomPdId();
+    let recordId = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = (Date.now() * 1000) + Math.floor(Math.random() * 1000);
+      const existing = await db.get('SELECT id FROM bom_records WHERE id = ?', [candidate]);
+      if (!existing) {
+        recordId = candidate;
+        break;
+      }
+    }
+    if (!recordId) {
+      throw new Error('Unable to allocate BOM record ID.');
+    }
+
+    await db.run('BEGIN');
+    try {
 
       const snapshotToStore = normalizeCalculationSnapshot(calculationSnapshot);
 
@@ -3462,7 +3615,28 @@ app.post("/api/bom/records", auth.authMiddleware, requireBomRecordWrite, async (
           pdId: assignedPdId
         });
       }
-      res.status(201).json({ success: true, id: recordId, pd_id: assignedPdId });
+
+      let submissionEmailResult = { sent: false, reason: 'not_attempted' };
+      try {
+        submissionEmailResult = await sendRecipeSubmissionEmail({
+          recipeRecord: { ...record, pd_id: assignedPdId, id: recordId },
+          authorName: req.user.name || req.user.email || 'Unknown',
+          isClone: !!sourceId
+        });
+      } catch (mailErr) {
+        submissionEmailResult = { sent: false, reason: mailErr.message || 'mail_send_failed' };
+      }
+      if (!submissionEmailResult.sent) {
+        console.warn('Recipe submission email was not sent:', submissionEmailResult.reason);
+      }
+
+      res.status(201).json({
+        success: true,
+        id: recordId,
+        pd_id: assignedPdId,
+        emailSent: !!submissionEmailResult.sent,
+        emailReason: submissionEmailResult.reason || null
+      });
     } catch (innerErr) {
       await db.run('ROLLBACK').catch(() => {});
       throw innerErr;
@@ -3678,7 +3852,7 @@ app.get("/api/bom/recipe-summary/export", auth.authMiddleware, async (req, res) 
     const rows = data.map((item) => ({
       "Recipe Approved": item.recipeApproved || "",
       "SAP ID": item.sapId || "",
-      "PFN ID": item.pfnId || "",
+      "PD ID": item.pfnId || "",
       "Customer": item.customer || "",
       "Market Segment": item.marketSegment || "",
       "Application": item.application || "",
@@ -3748,6 +3922,133 @@ app.get("/api/bom/records/:id", auth.authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Error loading BOM record:', err);
     res.status(500).json({ error: 'Failed to load BOM record', details: err.message });
+  }
+});
+
+// ==================== RECIPE APPROVAL REGION MATRIX ====================
+
+app.get("/api/admin/recipe-approval-region-matrix", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    await ensureBomRecordStoreReady();
+
+    // Candidate users: members of groups named "Admin" or "Recipe Approvals"
+    const candidateRows = await db.all(
+      `SELECT DISTINCT u.id, u.email, u.name,
+              GROUP_CONCAT(g.name) as group_names
+       FROM users u
+       JOIN user_groups ug ON u.id = ug.user_id
+       JOIN groups g ON ug.group_id = g.id
+       WHERE (g.name = 'Admin' OR g.name = 'Recipe Approvals')
+         AND u.is_active = 1
+       GROUP BY u.id
+       ORDER BY u.name`
+    );
+
+    const assignments = await db.all('SELECT user_id, region FROM recipe_approval_region_assignments');
+    const assignmentMap = {};
+    assignments.forEach(row => {
+      if (!assignmentMap[row.user_id]) assignmentMap[row.user_id] = {};
+      assignmentMap[row.user_id][row.region] = true;
+    });
+
+    const matrix = candidateRows.map(user => {
+      const regions = {};
+      RECIPE_APPROVAL_REGIONS.forEach(r => { regions[r] = !!(assignmentMap[user.id] && assignmentMap[user.id][r]); });
+      return {
+        userId: String(user.id),
+        name: user.name || '',
+        email: user.email || '',
+        groups: user.group_names ? user.group_names.split(',') : [],
+        regions
+      };
+    });
+
+    res.json({ regions: RECIPE_APPROVAL_REGIONS, matrix });
+  } catch (err) {
+    console.error('Error loading recipe approval region matrix:', err);
+    res.status(500).json({ error: 'Failed to load region matrix', details: err.message });
+  }
+});
+
+app.put("/api/admin/recipe-approval-region-matrix", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    await ensureBomRecordStoreReady();
+
+    const { matrix } = req.body || {};
+    if (!Array.isArray(matrix)) {
+      return res.status(400).json({ error: 'Request body must include a matrix array.' });
+    }
+
+    // Resolve valid candidate user IDs (same query as GET)
+    const candidateRows = await db.all(
+      `SELECT DISTINCT u.id FROM users u
+       JOIN user_groups ug ON u.id = ug.user_id
+       JOIN groups g ON ug.group_id = g.id
+       WHERE (g.name = 'Admin' OR g.name = 'Recipe Approvals') AND u.is_active = 1`
+    );
+    const validUserIds = new Set(candidateRows.map(r => String(r.id)));
+
+    await db.run('BEGIN');
+    try {
+      for (const entry of matrix) {
+        const userId = String(entry.userId || '');
+        if (!userId || !validUserIds.has(userId)) continue;  // ignore non-candidates
+
+        const regions = entry.regions || {};
+        for (const region of RECIPE_APPROVAL_REGIONS) {
+          if (regions[region]) {
+            await db.run(
+              'INSERT OR IGNORE INTO recipe_approval_region_assignments (user_id, region) VALUES (?, ?)',
+              [Number(userId), region]
+            );
+          } else {
+            await db.run(
+              'DELETE FROM recipe_approval_region_assignments WHERE user_id = ? AND region = ?',
+              [Number(userId), region]
+            );
+          }
+        }
+      }
+      await db.run('COMMIT');
+    } catch (innerErr) {
+      await db.run('ROLLBACK').catch(() => {});
+      throw innerErr;
+    }
+
+    // Return updated matrix (same shape as GET)
+    const candidateFull = await db.all(
+      `SELECT DISTINCT u.id, u.email, u.name,
+              GROUP_CONCAT(g.name) as group_names
+       FROM users u
+       JOIN user_groups ug ON u.id = ug.user_id
+       JOIN groups g ON ug.group_id = g.id
+       WHERE (g.name = 'Admin' OR g.name = 'Recipe Approvals')
+         AND u.is_active = 1
+       GROUP BY u.id
+       ORDER BY u.name`
+    );
+    const updatedAssignments = await db.all('SELECT user_id, region FROM recipe_approval_region_assignments');
+    const updatedMap = {};
+    updatedAssignments.forEach(row => {
+      if (!updatedMap[row.user_id]) updatedMap[row.user_id] = {};
+      updatedMap[row.user_id][row.region] = true;
+    });
+    const updatedMatrix = candidateFull.map(user => {
+      const regions = {};
+      RECIPE_APPROVAL_REGIONS.forEach(r => { regions[r] = !!(updatedMap[user.id] && updatedMap[user.id][r]); });
+      return {
+        userId: String(user.id),
+        name: user.name || '',
+        email: user.email || '',
+        groups: user.group_names ? user.group_names.split(',') : [],
+        regions
+      };
+    });
+
+    res.json({ regions: RECIPE_APPROVAL_REGIONS, matrix: updatedMatrix });
+  } catch (err) {
+    console.error('Error saving recipe approval region matrix:', err);
+    res.status(500).json({ error: 'Failed to save region matrix', details: err.message });
   }
 });
 
@@ -3860,9 +4161,10 @@ app.post("/api/bom/approvals/:id/action", auth.authMiddleware, requireRecipeAppr
       [mapped.recipeApproved, mapped.approvalDecision, comment, req.user.id, id]
     );
 
+    const pdIdForAudit = await resolveAuditPdId(id, record.pd_id || null);
     await auth.auditLog(req.user.id, "RECIPE_APPROVAL_ACTION", "bom_record", {
       recordId: id,
-      pdId: record.pd_id || null,
+      pdId: pdIdForAudit,
       action: normalizedAction,
       decision: mapped.approvalDecision
     });
@@ -4021,9 +4323,10 @@ app.put("/api/bom/records/:id", auth.authMiddleware, requireBomRecordWrite, asyn
       }
 
       await db.run('COMMIT');
+      const pdIdForAudit = await resolveAuditPdId(id, record.pd_id || existing.pd_id || null);
       await auth.auditLog(req.user.id, 'BOM_RECORD_UPDATED', 'bom_record', {
         recordId: id,
-        pdId: record.pd_id || existing.pd_id || null
+        pdId: pdIdForAudit
       });
       res.json({ success: true, id });
     } catch (innerErr) {
@@ -4033,6 +4336,42 @@ app.put("/api/bom/records/:id", auth.authMiddleware, requireBomRecordWrite, asyn
   } catch (err) {
     console.error('Error updating BOM record:', err);
     res.status(500).json({ error: 'Failed to update BOM record', details: err.message });
+  }
+});
+
+app.delete("/api/bom/records/:id", auth.authMiddleware, requireBomRecordDelete, async (req, res) => {
+  try {
+    await ensureBomRecordStoreReady();
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid record ID.' });
+
+    const existing = await db.get('SELECT id, pd_id FROM bom_records WHERE id = ?', [id]);
+    if (!existing) return res.status(404).json({ error: 'Record not found.' });
+
+    const pdIdForAudit = await resolveAuditPdId(id, existing.pd_id || null);
+
+    await db.run('BEGIN');
+    try {
+      await db.run('DELETE FROM bom_record_materials WHERE record_id = ?', [id]);
+      const result = await db.run('DELETE FROM bom_records WHERE id = ?', [id]);
+
+      if (!result || result.changes !== 1) {
+        throw new Error('Failed to delete BOM record.');
+      }
+
+      await db.run('COMMIT');
+      await auth.auditLog(req.user.id, 'BOM_RECORD_DELETED', 'bom_record', {
+        recordId: id,
+        pdId: pdIdForAudit
+      });
+      res.json({ success: true, id });
+    } catch (innerErr) {
+      await db.run('ROLLBACK').catch(() => {});
+      throw innerErr;
+    }
+  } catch (err) {
+    console.error('Error deleting BOM record:', err);
+    res.status(500).json({ error: 'Failed to delete BOM record', details: err.message });
   }
 });
 

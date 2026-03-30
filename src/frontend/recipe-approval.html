@@ -280,6 +280,8 @@
       </div>
     </header>
 
+    <div id="pageFeedback" class="feedback" style="margin: 8px 0 12px 0;"></div>
+
     <div class="page-layout">
       <section class="panel">
         <div class="panel-header">
@@ -307,6 +309,7 @@
     let pendingRecords = [];
     let selectedRecordId = null;
     let canModify = false;
+    let latestFeedback = { message: '', isError: false };
 
     const technicalFields = [
       ['Customer', 'customer'],
@@ -401,7 +404,6 @@
         const decision = record.approval_decision || 'Pending';
         return `
           <tr class="recipe-row ${selected}" onclick="openRecipeDetail(${Number(record.id)})">
-            <td>${escapeHtml(record.pd_id || '-')}</td>
             <td>${escapeHtml(record.customer || '-')}</td>
             <td>${escapeHtml(record.line || '-')}</td>
             <td>${escapeHtml(record.author || '-')}</td>
@@ -415,7 +417,6 @@
         <table>
           <thead>
             <tr>
-              <th>PD ID</th>
               <th>Customer</th>
               <th>Line</th>
               <th>Author</th>
@@ -486,11 +487,26 @@
       `;
     }
 
+    function renderFeedback() {
+      const pageFeedback = document.getElementById('pageFeedback');
+      if (pageFeedback) {
+        pageFeedback.textContent = latestFeedback.message || '';
+        pageFeedback.classList.toggle('error', !!latestFeedback.isError);
+      }
+
+      const detailFeedback = document.getElementById('approvalFeedback');
+      if (detailFeedback) {
+        detailFeedback.textContent = latestFeedback.message || '';
+        detailFeedback.classList.toggle('error', !!latestFeedback.isError);
+      }
+    }
+
     function setFeedback(message, isError) {
-      const feedback = document.getElementById('approvalFeedback');
-      if (!feedback) return;
-      feedback.textContent = message || '';
-      feedback.classList.toggle('error', !!isError);
+      latestFeedback = {
+        message: message || '',
+        isError: !!isError
+      };
+      renderFeedback();
     }
 
     async function loadPendingRecords() {
@@ -568,8 +584,10 @@
         `;
 
         detailWrap.innerHTML = reviewBlock;
+        renderFeedback();
       } catch (error) {
         detailWrap.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+        renderFeedback();
       }
     }
 

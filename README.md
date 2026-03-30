@@ -47,14 +47,17 @@ Test credentials (created by setup script):
 - BOM list management backed by SQLite tables (no runtime Excel dependency for dropdown lists)
 - Renaming values in BOM shared lists (for example Customer, Market Segment, Application) also updates the corresponding text fields in existing historical BOM recipes, so Recipe Browser filters and saved recipe summaries stay aligned with the edited list values
 - BOM recipe save flow with mandatory field validation before database write
-- BOM recipe percentage validation enforces `100.00%` on non-surfactant materials only (surfactants are intentionally excluded)
+- BOM recipe percentage validation enforces `100.00%` on non-surfactant materials only (surfactants, identified by `material_label = 'Surfactant'`, are intentionally excluded because they evaporate during production; the final product gramage is based only on base materials)
+- Recipe editor and clone operations apply the same percentage validation: materials with `material_label = 'Surfactant'` are excluded from the 100% sum check
 - New BOM and cloned recipes receive server-assigned PD IDs in a contiguous sequence starting at `10000`; IDs freed by Admin delete are reused, and legacy IDs below `10000` are ignored by the allocator
 - BOM snapshot storage includes Description fields, Calculation Results material percentages,
   minimum batch size/unit, and commentary notes
 - BOM Work in Progress (Save WIP / Load WIP) preserves surfactant rows including concentration + OPU values
 - Recipe submission email routing is region-aware: recipients are resolved by recipe line region from the Admin Recipe Approval Region matrix (with optional env fallback)
+- If recipe line cannot be mapped to a known region, submission email still uses env fallback recipients (`RECIPE_SUBMISSION_NOTIFY_TO`, `RECIPE_APPROVAL_NOTIFY_TO`, `APPROVAL_NOTIFY_TO`)
 - Recipe decision emails sent to authors omit SAP ID in subject/body and omit Recipe ID from the body
 - Recipe Edit/Clone includes Created and Updated timestamps in the grid and an Admin-only Delete action
+- Audit Logs detail rendering now includes `PD ID` plus record context (`Record`, `Source`, `New`, `Action`, `Decision`) for BOM/approval actions
 - Raw Material Price Management by plant (CZ, EG, ZA): monthly sheets, missing/fallback statuses, inline edits, and JSON import
 - RM Prices page filters: status filter (All/Priced/Fallback/Missing) and real-time material name text search, with all exports respecting the active filters
 - RM Prices page exports: Export Sheet CSV and Export Sheet Excel buttons export the currently visible (filtered) sheet; Export Missing exports only missing-price rows

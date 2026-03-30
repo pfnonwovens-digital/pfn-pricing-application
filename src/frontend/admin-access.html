@@ -2220,7 +2220,13 @@
             if (!details || Object.keys(details).length === 0) return '-';
             
             const parts = [];
-            if (details.pdId || details.pd_id) parts.push(`PD ID: ${escapeHtml(details.pdId || details.pd_id)}`);
+            const pdId = details.pdId || details.pd_id;
+            if (pdId) parts.push(`PD ID: ${escapeHtml(pdId)}`);
+            if (details.recordId) parts.push(`Record: ${escapeHtml(details.recordId)}`);
+            if (details.sourceRecordId) parts.push(`Source: ${escapeHtml(details.sourceRecordId)}`);
+            if (details.newRecordId) parts.push(`New: ${escapeHtml(details.newRecordId)}`);
+            if (details.action) parts.push(`Action: ${escapeHtml(details.action)}`);
+            if (details.decision) parts.push(`Decision: ${escapeHtml(details.decision)}`);
             if (details.ip) parts.push(`IP: ${escapeHtml(details.ip)}`);
             if (details.reason) parts.push(`Reason: ${escapeHtml(details.reason)}`);
             if (details.email) parts.push(`Email: ${escapeHtml(details.email)}`);

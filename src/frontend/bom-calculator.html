@@ -4816,7 +4816,10 @@
           backBtn.style.display = '';
         }
         const pdSuffix = data.pd_id ? ` | PD ID: ${data.pd_id}` : '';
-        alert(`BOM record saved successfully (ID: ${data.id}${pdSuffix}).`);
+        const emailInfo = data.emailSent
+          ? ' | Email sent'
+          : ` | Email not sent (${data.emailReason || 'unknown reason'})`;
+        alert(`BOM record saved successfully (ID: ${data.id}${pdSuffix}${emailInfo}).`);
       } catch (err) {
         statusEl.textContent = 'Network error. Please try again.';
         btn.disabled = false;

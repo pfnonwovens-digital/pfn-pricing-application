@@ -177,9 +177,8 @@
 
     .modal.show { display: flex; }
 
-    #editorModal .modal-content {
-      width: 85vw;
-      max-width: 85vw;
+    .modal-content {
+      width: min(1300px, 96vw);
       max-height: 94vh;
       overflow: auto;
       background: #fff;
@@ -359,7 +358,6 @@
               <th>Overconsumption</th>
               <th>Notes</th>
               <th>Author</th>
-              <th>Created</th>
               <th>Updated</th>
               <th>BOM</th>
             </tr>
@@ -405,7 +403,6 @@
       </div>
 
       <div class="actions" style="justify-content:flex-end; margin-top: 10px;">
-        <button class="btn btn-primary hidden" id="requestApprovalBtn">Request Approval</button>
         <button class="btn btn-success" id="saveEditorBtn">Save</button>
       </div>
       <div class="muted" style="margin-top:6px;">
@@ -420,7 +417,7 @@
     let pagePermissions = {};
     let currentUser = null;
     let canModify = false;
-    let isAdminGroupMember = false;
+    let isAdminUser = false;
     let metadata = null;
     let rows = [];
     let recipeTableScrollSyncBound = false;
@@ -429,7 +426,6 @@
     let currentRecordId = null;
     let sourceRecordId = null;
     let originalPdId = '';
-    let currentRecordRecipeApproved = 'No';
 
     const FILTERS = [
       { id: 'sapId', label: 'SAP ID', key: 'sapIds' },
@@ -547,31 +543,26 @@
     }
 
     async function loadPagePermissions() {
-      const [meResponse, permissionsResponse, groupsResponse] = await Promise.all([
+      const [meResponse, permissionsResponse] = await Promise.all([
         fetch('/api/auth/me', {
           headers: { Authorization: `Bearer ${token}` }
         }),
         fetch('/api/auth/me/access-permissions', {
           headers: { Authorization: `Bearer ${token}` }
-        }),
-        fetch('/api/auth/me/groups', {
-          headers: { Authorization: `Bearer ${token}` }
         })
       ]);
 
-      if (!meResponse.ok || !permissionsResponse.ok || !groupsResponse.ok) {
+      if (!meResponse.ok || !permissionsResponse.ok) {
         throw new Error('Unable to load page permissions.');
       }
 
       currentUser = await meResponse.json().catch(() => null);
       const data = await permissionsResponse.json().catch(() => ({}));
-      const groups = await groupsResponse.json().catch(() => []);
       pagePermissions = data.pages || {};
-      isAdminGroupMember = Array.isArray(groups) && groups.some((g) => String(g?.name || '').trim().toLowerCase() === 'admin');
 
-      const isAdmin = currentUser?.role === 'admin';
-      canModify = isAdmin || !!(pagePermissions['recipe-edit-clone'] && pagePermissions['recipe-edit-clone'].modify);
-      const canRead = isAdmin || !!(pagePermissions['recipe-edit-clone'] && pagePermissions['recipe-edit-clone'].read);
+      isAdminUser = currentUser?.role === 'admin';
+      canModify = isAdminUser || !!(pagePermissions['recipe-edit-clone'] && pagePermissions['recipe-edit-clone'].modify);
+      const canRead = isAdminUser || !!(pagePermissions['recipe-edit-clone'] && pagePermissions['recipe-edit-clone'].read);
       if (!canRead) throw new Error('You do not have read access to Recipe Edit/Clone page.');
     }
 
@@ -610,7 +601,7 @@
           ? `<div class="actions-cell">
                <button class="btn btn-primary" onclick="openEditor('edit', ${Number(r.id)})">Edit</button>
                <button class="btn btn-secondary" onclick="openEditor('copy', ${Number(r.id)})">Copy</button>
-               ${isAdminGroupMember ? `<button class="btn btn-danger" onclick="deleteRecipe(${Number(r.id)})">Delete</button>` : ''}
+               ${isAdminUser ? `<button class="btn btn-danger" onclick="deleteRecord(${Number(r.id)})">Delete</button>` : ''}
              </div>`
           : `<span class="muted">Read only</span>`;
 
@@ -661,8 +652,7 @@
             <td>${formatNum((Number(r.overconsumption) || 0) * 100, 2)}%</td>
             <td>${escapeHtml(r.notes || '-')}</td>
             <td>${escapeHtml(r.author || '-')}</td>
-            <td>${escapeHtml(formatDate(r.created_at))}</td>
-            <td>${escapeHtml(formatDate(r.updated_at))}</td>
+            <td>${escapeHtml(formatDate(r.updated_at || r.created_at))}</td>
             <td class="bom-cell">${bomCellHtml(r.materials || [], r.material_total_percent || 0)}</td>
           </tr>
         `;
@@ -828,10 +818,6 @@
       return Number.isFinite(n) ? n : null;
     }
 
-    function isSurfactantLabel(label) {
-      return String(label || '').trim().toLowerCase() === 'surfactant';
-    }
-
     function addMaterialRow(material = {}) {
       const body = document.getElementById('materialsBody');
       const row = document.createElement('tr');
@@ -899,17 +885,13 @@
     function updateMaterialsTotal() {
       const totalsEl = document.getElementById('materialsTotal');
       const rowsEls = Array.from(document.querySelectorAll('#materialsBody .material-row'));
-      let totalNonSurfactant = 0;
+      let total = 0;
       rowsEls.forEach((row) => {
-        const label = row.querySelector('.mat-label')?.value || '';
         const pct = Number(row.querySelector('.mat-pct')?.value || 0);
-        if (!Number.isFinite(pct)) return;
-        if (!isSurfactantLabel(label)) {
-          totalNonSurfactant += pct;
-        }
+        if (Number.isFinite(pct)) total += pct;
       });
-      totalsEl.textContent = `Total (non-surfactants): ${totalNonSurfactant.toFixed(2)}%`;
-      totalsEl.classList.toggle('bad', Math.abs(totalNonSurfactant - 100) > 0.01);
+      totalsEl.textContent = `Total: ${total.toFixed(2)}%`;
+      totalsEl.classList.toggle('bad', Math.abs(total - 100) > 0.01);
     }
 
     function fillEditor(record) {
@@ -1052,17 +1034,11 @@
         rec.id = null;
         rec.pd_id = '';
         rec.recipe_approved = 'No';
-        currentRecordRecipeApproved = 'No';
         originalPdId = '';
       } else {
         currentRecordId = Number(source.id);
-        currentRecordRecipeApproved = String(source.recipe_approved || 'No');
         originalPdId = (source.pd_id || '').toString().trim();
       }
-
-      const requestApprovalBtn = document.getElementById('requestApprovalBtn');
-      const isPendingEdit = mode === 'edit' && String(currentRecordRecipeApproved).toLowerCase() !== 'yes';
-      requestApprovalBtn.classList.toggle('hidden', !isPendingEdit);
 
       document.getElementById('editorTitle').textContent = mode === 'copy'
         ? `Copy Recipe (source ID ${source.id})`
@@ -1078,11 +1054,46 @@
       document.getElementById('editorModal').classList.remove('show');
     }
 
-    async function saveEditor(options = {}) {
+    async function deleteRecord(recordId) {
+      if (!isAdminUser) {
+        setStatus('Delete is available only for Admin users.', true);
+        return;
+      }
+
+      const source = rows.find((r) => Number(r.id) === Number(recordId));
+      if (!source) {
+        setStatus('Record not found.', true);
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Delete recipe ID ${recordId}${source.pd_id ? ` (PD ${source.pd_id})` : ''}? This action cannot be undone.`
+      );
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(`/api/bom/records/${Number(recordId)}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          setStatus(data.error || 'Delete failed.', true);
+          return;
+        }
+
+        rows = rows.filter((r) => Number(r.id) !== Number(recordId));
+        renderRows();
+        setStatus(`Recipe ID ${recordId} deleted successfully.`, false);
+      } catch (err) {
+        setStatus(err.message || 'Delete failed.', true);
+      }
+    }
+
+    async function saveEditor() {
       if (!canModify) return;
       setStatus('', false, 'editorStatus');
-
-      const sendApprovalRequest = !!options.sendApprovalRequest;
 
       const { record, materials } = collectEditorPayload();
       if (!materials.length) {
@@ -1090,13 +1101,12 @@
         return;
       }
 
-      const nonSurfactantTotal = materials.reduce((sum, m) => {
-        const pct = Number(m.percentage) || 0;
-        return isSurfactantLabel(m.material_label) ? sum : (sum + pct);
-      }, 0);
-
-      if (Math.abs(nonSurfactantTotal - 100) > 0.01) {
-        setStatus(`BOM non-surfactant total must be 100.00%, current total is ${nonSurfactantTotal.toFixed(2)}%.`, true, 'editorStatus');
+      // Validate total percentage of non-surfactant materials must equal 100%
+      // (Surfactants evaporate during production, so they are excluded from percentage sum)
+      const nonSurfactants = materials.filter(m => m.material_label !== 'Surfactant');
+      const total = nonSurfactants.reduce((sum, m) => sum + (Number(m.percentage) || 0), 0);
+      if (Math.abs(total - 100) > 0.01) {
+        setStatus(`BOM total (excluding surfactants) must be 100.00%, current total is ${total.toFixed(2)}%.`, true, 'editorStatus');
         return;
       }
 
@@ -1112,14 +1122,11 @@
       const payload = {
         record,
         materials,
-        sourceRecordId: editorMode === 'copy' ? sourceRecordId : null,
-        sendApprovalRequest
+        sourceRecordId: editorMode === 'copy' ? sourceRecordId : null
       };
 
       const btn = document.getElementById('saveEditorBtn');
-      const requestBtn = document.getElementById('requestApprovalBtn');
       btn.disabled = true;
-      requestBtn.disabled = true;
       try {
         const response = await fetch(url, {
           method,
@@ -1137,62 +1144,32 @@
         }
 
         if (editorMode === 'copy') {
-          closeEditor();
-          setStatus(`Clone saved successfully (ID: ${data.id}${data.pd_id ? `, PD ID: ${data.pd_id}` : ''}).`, false);
-          await loadRows();
-          return;
+          currentRecordId = Number(data.id);
+          editorMode = 'edit';
+          sourceRecordId = Number(data.id);
+          originalPdId = data.pd_id || '';
+          const pdInput = document.getElementById('ed_pd_id');
+          if (pdInput) {
+            pdInput.value = originalPdId;
+            pdInput.readOnly = !!originalPdId;
+          }
+          document.getElementById('editorTitle').textContent = `Edit Recipe ID ${data.id}`;
         }
 
-        if (sendApprovalRequest) {
-          const mailMsg = data.emailSent
-            ? ' Approval request email sent.'
-            : ` Approval email not sent (${data.emailReason || 'unknown'}).`;
-          setStatus(`Saved successfully (ID: ${data.id}).${mailMsg}`, false, 'editorStatus');
-          closeEditor();
-          window.location.href = '/recipe-edit-clone';
-          return;
-        } else {
-          setStatus(`Saved successfully (ID: ${data.id}).`, false, 'editorStatus');
-        }
+        const pdSuffix = data.pd_id ? ` | PD ID: ${data.pd_id}` : '';
+        const hasEmailInfo = Object.prototype.hasOwnProperty.call(data, 'emailSent');
+        const emailSuffix = hasEmailInfo
+          ? (data.emailSent
+              ? ' | Email sent'
+              : ` | Email not sent (${data.emailReason || 'unknown reason'})`)
+          : '';
+        setStatus(`Saved successfully (ID: ${data.id}${pdSuffix}${emailSuffix}).`, false, 'editorStatus');
         await loadRows();
+        setTimeout(() => closeEditor(), 1500);
       } catch (err) {
         setStatus(err.message || 'Save failed.', true, 'editorStatus');
       } finally {
         btn.disabled = false;
-        requestBtn.disabled = false;
-      }
-    }
-
-    async function deleteRecipe(recordId) {
-      if (!isAdminGroupMember) {
-        setStatus('Delete is available only for users in Admin group.', true);
-        return;
-      }
-
-      const row = rows.find((r) => Number(r.id) === Number(recordId));
-      const pd = row?.pd_id ? `PD ${row.pd_id}` : `ID ${recordId}`;
-      const confirmed = window.confirm(`Delete recipe ${pd}? This action cannot be undone.`);
-      if (!confirmed) return;
-
-      setStatus('Deleting recipe...', false);
-
-      try {
-        const response = await fetch(`/api/bom/records/${Number(recordId)}`, {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to delete recipe.');
-        }
-
-        setStatus(`Recipe deleted (ID: ${recordId}).`, false);
-        await loadRows();
-      } catch (err) {
-        setStatus(err.message || 'Delete failed.', true);
       }
     }
 
@@ -1230,8 +1207,7 @@
         addMaterialRow({ material_label: 'Spunbond polymer', material_name: '', percentage: '' });
       });
 
-      document.getElementById('saveEditorBtn').addEventListener('click', () => saveEditor());
-      document.getElementById('requestApprovalBtn').addEventListener('click', () => saveEditor({ sendApprovalRequest: true }));
+      document.getElementById('saveEditorBtn').addEventListener('click', saveEditor);
 
       document.getElementById('editorModal').addEventListener('click', (event) => {
         if (event.target.id === 'editorModal') closeEditor();
@@ -1240,7 +1216,6 @@
 
     window.openEditor = openEditor;
     window.closeEditor = closeEditor;
-    window.deleteRecipe = deleteRecipe;
 
     document.addEventListener('DOMContentLoaded', initialize);
   </script>

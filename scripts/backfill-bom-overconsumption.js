@@ -49,7 +49,7 @@ async function main() {
 
     for (const row of rows) {
       const sapId = String(row['SAP ID'] || '').trim();
-      const pfnId = String(row['PD ID'] || row['PFN ID'] || '').trim();
+      const pdId = String(row['PD ID'] || '').trim();
       const lineVal = String(row['Line'] || '').trim();
       const overcons = toPercentMaybeFraction(row['Overconsumption']);
 
@@ -62,11 +62,11 @@ async function main() {
           [overcons, IMPORT_USER_ID, sapId, lineVal || null]
         );
         updated += result.changes || 0;
-      } else if (/^\d+$/.test(pfnId)) {
+      } else if (/^\d+$/.test(pdId)) {
         const result = await dbRun(
           db,
           'UPDATE bom_records SET overconsumption=? WHERE created_by=? AND pd_id=?',
-          [overcons, IMPORT_USER_ID, pfnId]
+          [overcons, IMPORT_USER_ID, pdId]
         );
         updated += result.changes || 0;
       } else {

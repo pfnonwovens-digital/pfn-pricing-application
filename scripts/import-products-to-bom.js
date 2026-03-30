@@ -205,19 +205,19 @@ async function main() {
   try {
     for (const row of rows) {
       const sapId   = String(row['SAP ID']  || '').trim();
-      const pfnId   = String(row['PD ID'] || row['PFN ID'] || '').trim();
+      const pdId    = String(row['PD ID'] || '').trim();
       const lineVal = String(row['Line']    || '').trim();
 
       // Skip blank rows
       const customer = String(row['Customer'] || '').trim();
-      if (!pfnId && !sapId && !customer) {
+      if (!pdId && !sapId && !customer) {
         skippedEmpty++;
         continue;
       }
 
       // Skip rows where PD ID is present but not purely numeric (test/draft rows)
-      if (pfnId && !/^\d+$/.test(pfnId)) {
-        console.log(`  SKIP (non-numeric PFN): PFN="${pfnId}" SAP="${sapId}" Customer="${customer}"`);
+      if (pdId && !/^\d+$/.test(pdId)) {
+        console.log(`  SKIP (non-numeric PD): PD="${pdId}" SAP="${sapId}" Customer="${customer}"`);
         skippedEmpty++;
         continue;
       }
@@ -229,13 +229,13 @@ async function main() {
           'SELECT id FROM bom_records WHERE sap_id = ? AND line = ?',
           [sapId, lineVal || null]);
         if (ex) isDup = true;
-      } else if (pfnId) {
+      } else if (pdId) {
         const ex = await dbGet(db,
-          'SELECT id FROM bom_records WHERE pd_id = ?', [pfnId]);
+          'SELECT id FROM bom_records WHERE pd_id = ?', [pdId]);
         if (ex) isDup = true;
       }
       if (isDup) {
-        console.log(`  SKIP (dup):      PFN=${pfnId || '-'} SAP=${sapId || '-'} Line=${lineVal || '-'}`);
+        console.log(`  SKIP (dup):      PD=${pdId || '-'} SAP=${sapId || '-'} Line=${lineVal || '-'}`);
         skippedDup++;
         continue;
       }
@@ -285,7 +285,7 @@ async function main() {
       `, [
         recordId,
         sapId || null,
-        pfnId || null,
+        pdId || null,
         customer || null,
         String(row['Market segment'] || '').trim() || null,
         String(row['Application']   || '').trim() || null,
@@ -324,7 +324,7 @@ async function main() {
         if (!xlsxName || pctFrac === null || pctFrac === 0) continue;
 
         if (!materialMapping.has(xlsxName)) {
-          warnings.push(`NO MAPPING — PFN=${pfnId} col=${nameCol}: "${xlsxName}"`);
+          warnings.push(`NO MAPPING — PD=${pdId} col=${nameCol}: "${xlsxName}"`);
           continue;
         }
         const dbName = materialMapping.get(xlsxName);
@@ -332,7 +332,7 @@ async function main() {
 
         const label = getLabelFromDbName(dbName);
         if (!label) {
-          warnings.push(`UNKNOWN PREFIX — PFN=${pfnId} col=${nameCol}: "${dbName}"`);
+          warnings.push(`UNKNOWN PREFIX — PD=${pdId} col=${nameCol}: "${dbName}"`);
           continue;
         }
 
@@ -357,7 +357,7 @@ async function main() {
         `, [recordId, i, m.label, m.name, m.pct]);
       }
 
-      console.log(`  INSERTED: PFN=${pfnId || '-'} SAP=${sapId || '-'} Line=${lineVal || '-'} ` +
+      console.log(`  INSERTED: PD=${pdId || '-'} SAP=${sapId || '-'} Line=${lineVal || '-'} ` +
                   `Customer=${customer || '-'} BW=${customerBw !== null ? customerBw : '-'} ` +
                   `→ ${materials.length} material rows`);
       inserted++;
