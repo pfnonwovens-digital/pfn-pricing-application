@@ -4815,7 +4815,8 @@
         if (backBtn) {
           backBtn.style.display = '';
         }
-        alert(`BOM record saved successfully (ID: ${data.id}).`);
+        const pdSuffix = data.pd_id ? ` | PD ID: ${data.pd_id}` : '';
+        alert(`BOM record saved successfully (ID: ${data.id}${pdSuffix}).`);
       } catch (err) {
         statusEl.textContent = 'Network error. Please try again.';
         btn.disabled = false;

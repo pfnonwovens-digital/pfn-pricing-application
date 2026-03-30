@@ -146,6 +146,16 @@
             color: #333;
         }
 
+        #auditLogsTable thead {
+            background: #1e4fa8;
+        }
+
+        #auditLogsTable th {
+            color: #ffffff;
+            background: #1e4fa8;
+            border-bottom: 1px solid #3f69b8;
+        }
+
         td {
             padding: 8px;
             border-bottom: 1px solid #ddd;
@@ -2210,6 +2220,7 @@
             if (!details || Object.keys(details).length === 0) return '-';
             
             const parts = [];
+            if (details.pdId || details.pd_id) parts.push(`PD ID: ${escapeHtml(details.pdId || details.pd_id)}`);
             if (details.ip) parts.push(`IP: ${escapeHtml(details.ip)}`);
             if (details.reason) parts.push(`Reason: ${escapeHtml(details.reason)}`);
             if (details.email) parts.push(`Email: ${escapeHtml(details.email)}`);

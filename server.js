@@ -74,9 +74,6 @@ const ACCESS_PERMISSION_PAGES = [
   { key: "admin-access", title: "Admin Access", path: "/admin-access.html" }
 ];
 
-const RECIPE_APPROVAL_REGIONS = ["CZ", "EG", "RSA"];
-const RECIPE_APPROVAL_GROUP_ALIASES = ["admin", "recipe approvals", "recipe approval"];
-
 function normalizeUniqueStrings(values) {
   const seen = new Set();
   const normalized = [];
@@ -117,34 +114,6 @@ function compareValuesForDisplay(a, b) {
   if (!aIsNa && bIsNa) return -1;
 
   return String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
-}
-
-function normalizeGroupName(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function normalizeApprovalRegion(value) {
-  const raw = String(value || "").trim().toUpperCase();
-  if (raw === "ZA" || raw === "ZAF" || raw === "RSA") return "RSA";
-  if (raw === "CZ" || raw === "CZE") return "CZ";
-  if (raw === "EG" || raw === "EGY") return "EG";
-  return "";
-}
-
-function inferRecipeRegionFromLine(lineId, lineCountry = "") {
-  const lineText = String(lineId || "").trim();
-  const fromLine = normalizeApprovalRegion(rmPrices.getPlantFromLine(lineText));
-  if (fromLine) return fromLine;
-
-  const fromCountry = normalizeApprovalRegion(lineCountry);
-  if (fromCountry) return fromCountry;
-
-  const normalizedLine = lineText.toUpperCase();
-  if (normalizedLine.startsWith("CZ")) return "CZ";
-  if (normalizedLine.startsWith("EG")) return "EG";
-  if (normalizedLine.startsWith("ZA") || normalizedLine.startsWith("RSA")) return "RSA";
-
-  return "";
 }
 
 function readLegacyCustomerListFile() {
@@ -444,54 +413,11 @@ function mapRecipeDecisionToStatus(action) {
   return { recipeApproved: "No", approvalDecision: "Rejected", label: "Rejected" };
 }
 
-function getFirstEnvValue(keys) {
-  for (const key of keys || []) {
-    const value = process.env[key];
-    if (value === undefined || value === null) continue;
-    const text = String(value).trim();
-    if (text) return text;
-  }
-  return "";
-}
-
-function parseBooleanEnv(value, fallback = false) {
-  if (value === undefined || value === null || value === "") return fallback;
-  const normalized = String(value).trim().toLowerCase();
-  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
-  return fallback;
-}
-
-function parseEmailList(raw) {
-  if (!raw) return [];
-  return normalizeUniqueStrings(
-    String(raw)
-      .split(/[;,]/)
-      .map((part) => part.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
-function getRecipeMailFromAddress() {
-  return getFirstEnvValue([
-    "APPROVAL_FROM_EMAIL",
-    "RECIPE_FROM_EMAIL",
-    "SMTP_FROM_EMAIL",
-    "MAIL_FROM",
-    "SMTP_USER",
-    "SMTP_USERNAME",
-    "MAIL_USER",
-    "MAIL_USERNAME"
-  ]);
-}
-
 function getRecipeMailTransportConfig() {
-  const host = getFirstEnvValue(["SMTP_HOST", "MAIL_HOST"]);
-  const user = getFirstEnvValue(["SMTP_USER", "SMTP_USERNAME", "MAIL_USER", "MAIL_USERNAME"]);
-  const pass = getFirstEnvValue(["SMTP_PASS", "SMTP_PASSWORD", "MAIL_PASS", "MAIL_PASSWORD"]);
-  const port = Number(getFirstEnvValue(["SMTP_PORT", "MAIL_PORT"]) || 587);
-  const secure = parseBooleanEnv(getFirstEnvValue(["SMTP_SECURE", "MAIL_SECURE"]), port === 465);
-  const rejectUnauthorized = parseBooleanEnv(getFirstEnvValue(["SMTP_TLS_REJECT_UNAUTHORIZED", "MAIL_TLS_REJECT_UNAUTHORIZED"]), true);
+  const host = process.env.SMTP_HOST;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const port = Number(process.env.SMTP_PORT || 587);
 
   if (!host || !user || !pass) {
     return null;
@@ -500,96 +426,19 @@ function getRecipeMailTransportConfig() {
   return {
     host,
     port,
-    secure,
-    tls: { rejectUnauthorized },
+    secure: port === 465,
     auth: { user, pass }
   };
 }
 
-function getRecipeMailConfigStatus() {
-  const host = getFirstEnvValue(["SMTP_HOST", "MAIL_HOST"]);
-  const user = getFirstEnvValue(["SMTP_USER", "SMTP_USERNAME", "MAIL_USER", "MAIL_USERNAME"]);
-  const pass = getFirstEnvValue(["SMTP_PASS", "SMTP_PASSWORD", "MAIL_PASS", "MAIL_PASSWORD"]);
-  const from = getRecipeMailFromAddress();
-  const port = Number(getFirstEnvValue(["SMTP_PORT", "MAIL_PORT"]) || 587);
-  const secure = parseBooleanEnv(getFirstEnvValue(["SMTP_SECURE", "MAIL_SECURE"]), port === 465);
-
-  const missing = [];
-  if (!host) missing.push("SMTP_HOST/MAIL_HOST");
-  if (!user) missing.push("SMTP_USER/SMTP_USERNAME/MAIL_USER/MAIL_USERNAME");
-  if (!pass) missing.push("SMTP_PASS/SMTP_PASSWORD/MAIL_PASS/MAIL_PASSWORD");
-  if (!from) missing.push("RECIPE_FROM_EMAIL/SMTP_FROM_EMAIL/MAIL_FROM/MAIL_FROM_EMAIL/SMTP_USER/SMTP_USERNAME");
-
-  return {
-    configured: missing.length === 0,
-    missing,
-    hostConfigured: !!host,
-    userConfigured: !!user,
-    passConfigured: !!pass,
-    fromConfigured: !!from,
-    port,
-    secure
-  };
-}
-
-async function resolveRecipeApprovalRecipientEmails() {
-  const configured = getFirstEnvValue([
-    "RECIPE_APPROVAL_NOTIFY_TO",
-    "RECIPE_SUBMISSION_NOTIFY_TO",
-    "APPROVAL_NOTIFY_TO"
-  ]);
-
-  const configuredRecipients = parseEmailList(configured);
-  if (configuredRecipients.length > 0) {
-    return configuredRecipients;
-  }
-
-  const users = await db.all(
-    `SELECT id, email
-     FROM users
-     WHERE is_active = 1
-       AND email IS NOT NULL
-       AND TRIM(email) <> ''`
-  );
-
-  if (!Array.isArray(users) || users.length === 0) {
-    return [];
-  }
-
-  const checks = await Promise.all(users.map(async (user) => {
-    const canModifyApproval = await hasPagePermission(user.id, "recipe-approval", "modify");
-    return {
-      email: String(user.email || "").trim().toLowerCase(),
-      canModifyApproval
-    };
-  }));
-
-  return normalizeUniqueStrings(
-    checks
-      .filter((entry) => entry.canModifyApproval && entry.email)
-      .map((entry) => entry.email)
-  );
-}
-
-function resolveAuthorEmailFromRecord(record) {
-  const author = String(record?.author || "").trim().toLowerCase();
-  return author.includes("@") ? author : null;
-}
-
-async function sendRecipeMail({ toEmails, subject, lines }) {
-  const recipients = normalizeUniqueStrings(Array.isArray(toEmails) ? toEmails : [toEmails]);
-  if (recipients.length === 0) {
-    return { sent: false, reason: "missing_recipients" };
+async function sendRecipeDecisionEmail({ toEmail, reviewerName, decisionLabel, comment, recipeRecord }) {
+  if (!toEmail) {
+    return { sent: false, reason: "missing_author_email" };
   }
 
   const transportConfig = getRecipeMailTransportConfig();
   if (!transportConfig) {
     return { sent: false, reason: "smtp_not_configured" };
-  }
-
-  const from = getRecipeMailFromAddress();
-  if (!from) {
-    return { sent: false, reason: "missing_from_email" };
   }
 
   let nodemailer;
@@ -600,173 +449,17 @@ async function sendRecipeMail({ toEmails, subject, lines }) {
   }
 
   const transporter = nodemailer.createTransport(transportConfig);
-  await transporter.sendMail({
-    from,
-    to: recipients.join(", "),
-    subject,
-    text: (lines || []).join("\n")
-  });
+  const from = process.env.APPROVAL_FROM_EMAIL || process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
 
-  return { sent: true, recipients };
-}
-
-async function getRecipeApprovalCandidateUsers() {
-  const allUsers = await auth.getAllUsers();
-  const aliasSet = new Set(RECIPE_APPROVAL_GROUP_ALIASES.map((name) => normalizeGroupName(name)));
-
-  return (allUsers || [])
-    .filter((user) => {
-      const groups = Array.isArray(user.groups) ? user.groups : [];
-      return groups.some((groupName) => aliasSet.has(normalizeGroupName(groupName)));
-    })
-    .map((user) => ({
-      id: String(user.id || "").trim(),
-      name: String(user.name || "").trim(),
-      email: String(user.email || "").trim().toLowerCase(),
-      groups: Array.isArray(user.groups) ? user.groups : []
-    }))
-    .filter((user) => user.id && user.email)
-    .sort((a, b) => {
-      const byName = String(a.name || a.email).localeCompare(String(b.name || b.email), undefined, { sensitivity: "base", numeric: true });
-      if (byName !== 0) return byName;
-      return a.email.localeCompare(b.email, undefined, { sensitivity: "base", numeric: true });
-    });
-}
-
-async function getRecipeApprovalRegionAssignmentsMap() {
-  await ensureBomRecordStoreReady();
-  const rows = await db.all(`
-    SELECT user_id, region
-    FROM recipe_approval_region_assignments
-    ORDER BY user_id, region
-  `);
-
-  const map = new Map();
-  (rows || []).forEach((row) => {
-    const userId = String(row.user_id || "").trim();
-    const region = normalizeApprovalRegion(row.region);
-    if (!userId || !region) return;
-    if (!map.has(userId)) map.set(userId, new Set());
-    map.get(userId).add(region);
-  });
-
-  return map;
-}
-
-async function resolveRecipeApprovalRecipientEmails(recipeRecord = {}) {
-  const targetRegion = inferRecipeRegionFromLine(recipeRecord.line, recipeRecord.country);
-  if (!targetRegion) {
-    return { recipients: [], region: "", reason: "unknown_line_region" };
-  }
-
-  const candidates = await getRecipeApprovalCandidateUsers();
-  if (!candidates.length) {
-    return { recipients: [], region: targetRegion, reason: "no_candidate_users" };
-  }
-
-  const assignmentMap = await getRecipeApprovalRegionAssignmentsMap();
-  const recipients = normalizeUniqueStrings(
-    candidates
-      .filter((candidate) => assignmentMap.has(candidate.id) && assignmentMap.get(candidate.id).has(targetRegion))
-      .map((candidate) => candidate.email)
-  );
-
-  if (recipients.length > 0) {
-    return { recipients, region: targetRegion, reason: "region_matrix" };
-  }
-
-  const configured = getFirstEnvValue([
-    "RECIPE_APPROVAL_NOTIFY_TO",
-    "RECIPE_SUBMISSION_NOTIFY_TO",
-    "APPROVAL_NOTIFY_TO"
-  ]);
-  const configuredRecipients = parseEmailList(configured);
-  if (configuredRecipients.length > 0) {
-    return { recipients: configuredRecipients, region: targetRegion, reason: "env_fallback" };
-  }
-
-  return { recipients: [], region: targetRegion, reason: "no_assignee_for_region" };
-}
-
-async function sendRecipeSubmissionEmail({ recipeRecord, actorName, sourceRecordId = null, requestAfterEdit = false }) {
-  const resolvedRecipients = await resolveRecipeApprovalRecipientEmails(recipeRecord || {});
-  const recipients = resolvedRecipients.recipients || [];
-
-  if (!recipients.length) {
-    return {
-      sent: false,
-      reason: `missing_approval_recipients:${resolvedRecipients.reason || "unknown"}`,
-      region: resolvedRecipients.region || ""
-    };
-  }
-
-  let clonedFromPdId = null;
-  if (Number.isFinite(Number(sourceRecordId))) {
-    const sourceRecord = await db.get(
-      'SELECT pd_id FROM bom_records WHERE id = ? LIMIT 1',
-      [Number(sourceRecordId)]
-    ).catch(() => null);
-    clonedFromPdId = sourceRecord?.pd_id ? String(sourceRecord.pd_id).trim() : null;
-  }
-
-  const subjectPrefix = requestAfterEdit ? 'Approval requested after recipe edit | ' : '';
-  const subject = `${subjectPrefix}Pending Approval | PD ID ${recipeRecord.pd_id || "N/A"}`;
-  const lines = [
-    requestAfterEdit ? "Approval requested after recipe edit" : null,
-    requestAfterEdit ? "" : null,
-    `PD ID: ${recipeRecord.pd_id || "N/A"}`,
-    `Customer: ${recipeRecord.customer || "N/A"}`,
-    `Line: ${recipeRecord.line || "N/A"}`,
-    `Approval region: ${resolvedRecipients.region || "N/A"}`,
-    `Submitted by: ${actorName || "Unknown"}`,
-    sourceRecordId ? `Cloned from PD ID: ${clonedFromPdId || `N/A (source recipe ID ${sourceRecordId})`}` : null,
-    "",
-    "Open Recipe Approval page for review."
-  ].filter(Boolean);
-
-  return sendRecipeMail({ toEmails: recipients, subject, lines });
-}
-
-async function sendRecipeEditApprovalRequestEmail({ recipeRecord, actorName }) {
-  const resolvedRecipients = await resolveRecipeApprovalRecipientEmails(recipeRecord || {});
-  const recipients = resolvedRecipients.recipients || [];
-
-  if (!recipients.length) {
-    return {
-      sent: false,
-      reason: `missing_approval_recipients:${resolvedRecipients.reason || "unknown"}`,
-      region: resolvedRecipients.region || ""
-    };
-  }
-
-  const subject = `Approval requested after recipe edit | Pending Approval | PD ID ${recipeRecord.pd_id || "N/A"}`;
-  const lines = [
-    "Approval requested after recipe edit",
-    "",
-    `PD ID: ${recipeRecord.pd_id || "N/A"}`,
-    `Customer: ${recipeRecord.customer || "N/A"}`,
-    `Line: ${recipeRecord.line || "N/A"}`,
-    `Approval region: ${resolvedRecipients.region || "N/A"}`,
-    `Submitted by: ${actorName || "Unknown"}`,
-    "",
-    "Open Recipe Approval page for review."
-  ];
-
-  return sendRecipeMail({ toEmails: recipients, subject, lines });
-}
-
-async function sendRecipeDecisionEmail({ toEmail, reviewerName, decisionLabel, comment, recipeRecord }) {
-  if (!toEmail) {
-    return { sent: false, reason: "missing_author_email" };
-  }
-
-  const subject = `Recipe Decision: ${decisionLabel} | PD ${recipeRecord.pd_id || "N/A"}`;
+  const subject = `Recipe Decision: ${decisionLabel} | SAP ${recipeRecord.sap_id || "N/A"} | PFN ${recipeRecord.pd_id || "N/A"}`;
   const lines = [
     "Recipe approval update",
     "",
     `Decision: ${decisionLabel}`,
     `Reviewer: ${reviewerName || "Unknown"}`,
-    `PD ID: ${recipeRecord.pd_id || "N/A"}`,
+    `Recipe ID: ${recipeRecord.id}`,
+    `SAP ID: ${recipeRecord.sap_id || "N/A"}`,
+    `PFN ID: ${recipeRecord.pd_id || "N/A"}`,
     `Customer: ${recipeRecord.customer || "N/A"}`,
     `Line: ${recipeRecord.line || "N/A"}`,
     "",
@@ -776,7 +469,14 @@ async function sendRecipeDecisionEmail({ toEmail, reviewerName, decisionLabel, c
     "Open mini-ERP for details."
   ];
 
-  return sendRecipeMail({ toEmails: [toEmail], subject, lines });
+  await transporter.sendMail({
+    from,
+    to: toEmail,
+    subject,
+    text: lines.join("\n")
+  });
+
+  return { sent: true };
 }
 
 async function resolveAuthorEmailByUserId(userId) {
@@ -1389,30 +1089,6 @@ function requireRecipeEditCloneModify(req, res, next) {
     });
 }
 
-async function isUserInAdminGroup(userId) {
-  const groups = await auth.getUserGroups(userId);
-  return Array.isArray(groups) && groups.some((group) => String(group?.name || "").trim().toLowerCase() === "admin");
-}
-
-function requireRecipeDeleteAdminGroup(req, res, next) {
-  if (!req.user) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
-  Promise.resolve()
-    .then(async () => {
-      const allowed = await isUserInAdminGroup(req.user.id);
-      if (!allowed) {
-        return res.status(403).json({ error: "Delete is allowed only for Admin group users" });
-      }
-      return next();
-    })
-    .catch((err) => {
-      console.error("recipe delete admin-group check failed:", err);
-      return res.status(500).json({ error: "Failed to verify permissions" });
-    });
-}
-
 async function ensureBomListStoreReady() {
   if (!bomListStoreInitPromise) {
     bomListStoreInitPromise = (async () => {
@@ -1973,17 +1649,6 @@ async function ensureBomRecordStoreReady() {
           FOREIGN KEY (record_id) REFERENCES bom_records(id) ON DELETE CASCADE
         )
       `);
-
-      await db.run(`
-        CREATE TABLE IF NOT EXISTS recipe_approval_region_assignments (
-          user_id TEXT NOT NULL,
-          region TEXT NOT NULL,
-          updated_by TEXT,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (user_id, region),
-          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-      `);
     })();
   }
   return bomRecordStoreInitPromise;
@@ -2182,17 +1847,7 @@ app.get('/vendor/xlsx.full.min.js', (req, res) => {
 
 // Health check
 app.get("/api/health", (req, res) => {
-  const mail = getRecipeMailConfigStatus();
-  res.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    email: {
-      configured: mail.configured,
-      missing: mail.missing,
-      port: mail.port,
-      secure: mail.secure
-    }
-  });
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 // ==================== AUTHENTICATION ENDPOINTS ====================
@@ -2437,113 +2092,6 @@ app.put("/api/admin/groups/:id/access-permissions", auth.authMiddleware, auth.re
       success: true,
       message: "Access permissions updated successfully.",
       group: buildAccessMatrixRow(updatedGroup)
-    });
-  } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.get("/api/admin/recipe-approval-region-matrix", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
-  try {
-    const users = await getRecipeApprovalCandidateUsers();
-    const assignmentMap = await getRecipeApprovalRegionAssignmentsMap();
-
-    const matrix = users.map((user) => {
-      const assigned = assignmentMap.has(user.id) ? Array.from(assignmentMap.get(user.id)) : [];
-      return {
-        userId: user.id,
-        name: user.name || user.email,
-        email: user.email,
-        groups: user.groups,
-        regions: RECIPE_APPROVAL_REGIONS.reduce((acc, region) => {
-          acc[region] = assigned.includes(region);
-          return acc;
-        }, {})
-      };
-    });
-
-    res.json({
-      success: true,
-      regions: RECIPE_APPROVAL_REGIONS,
-      matrix
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.put("/api/admin/recipe-approval-region-matrix", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
-  try {
-    const incomingMatrix = Array.isArray(req.body?.matrix) ? req.body.matrix : null;
-    if (!incomingMatrix) {
-      return res.status(400).json({ success: false, error: "matrix array is required" });
-    }
-
-    const allowedUsers = await getRecipeApprovalCandidateUsers();
-    const allowedUserIds = new Set(allowedUsers.map((user) => user.id));
-    const allowedRegions = new Set(RECIPE_APPROVAL_REGIONS);
-
-    const normalizedAssignments = [];
-
-    for (const entry of incomingMatrix) {
-      const userId = String(entry?.userId || "").trim();
-      if (!userId || !allowedUserIds.has(userId)) {
-        continue;
-      }
-
-      const entryRegions = entry?.regions && typeof entry.regions === "object" ? entry.regions : {};
-      RECIPE_APPROVAL_REGIONS.forEach((region) => {
-        if (entryRegions[region]) {
-          normalizedAssignments.push({ userId, region });
-        }
-      });
-    }
-
-    // Safety: remove duplicates and keep only known regions.
-    const unique = new Map();
-    normalizedAssignments.forEach((assignment) => {
-      const region = normalizeApprovalRegion(assignment.region);
-      if (!allowedRegions.has(region)) return;
-      const key = `${assignment.userId}__${region}`;
-      unique.set(key, { userId: assignment.userId, region });
-    });
-
-    await db.run('BEGIN');
-    try {
-      await db.run('DELETE FROM recipe_approval_region_assignments');
-      for (const assignment of unique.values()) {
-        await db.run(
-          `INSERT INTO recipe_approval_region_assignments (user_id, region, updated_by, updated_at)
-           VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-          [assignment.userId, assignment.region, req.user.id || null]
-        );
-      }
-      await db.run('COMMIT');
-    } catch (innerErr) {
-      await db.run('ROLLBACK').catch(() => {});
-      throw innerErr;
-    }
-
-    const assignmentMap = await getRecipeApprovalRegionAssignmentsMap();
-    const matrix = allowedUsers.map((user) => {
-      const assigned = assignmentMap.has(user.id) ? Array.from(assignmentMap.get(user.id)) : [];
-      return {
-        userId: user.id,
-        name: user.name || user.email,
-        email: user.email,
-        groups: user.groups,
-        regions: RECIPE_APPROVAL_REGIONS.reduce((acc, region) => {
-          acc[region] = assigned.includes(region);
-          return acc;
-        }, {})
-      };
-    });
-
-    res.json({
-      success: true,
-      message: "Recipe approval region matrix saved.",
-      regions: RECIPE_APPROVAL_REGIONS,
-      matrix
     });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -3503,7 +3051,7 @@ function validateAndNormalizeBomMaterials(materials) {
     throw error;
   }
 
-  let totalNonSurfactant = 0;
+  let total = 0;
   const normalized = materials.map((raw, index) => {
     const percentage = Number(raw?.percentage);
     if (!Number.isFinite(percentage) || percentage < 0) {
@@ -3512,22 +3060,18 @@ function validateAndNormalizeBomMaterials(materials) {
       throw error;
     }
 
-    const materialLabel = normalizeText(raw?.material_label);
-    const isSurfactant = normalizeLower(materialLabel) === "surfactant";
-    if (!isSurfactant) {
-      totalNonSurfactant += percentage;
-    }
+    total += percentage;
 
     return {
-      material_label: materialLabel,
+      material_label: normalizeText(raw?.material_label),
       material_name: normalizeText(raw?.material_name),
       percentage,
       sort_order: Number.isFinite(Number(raw?.sort_order)) ? Number(raw.sort_order) : index
     };
   });
 
-  if (Math.abs(totalNonSurfactant - 100) > 0.01) {
-    const error = new Error(`BOM non-surfactant percentages must sum to 100.00% (current total: ${totalNonSurfactant.toFixed(2)}%).`);
+  if (Math.abs(total - 100) > 0.01) {
+    const error = new Error(`BOM percentages must sum to 100.00% (current total: ${total.toFixed(2)}%).`);
     error.statusCode = 400;
     throw error;
   }
@@ -3544,6 +3088,38 @@ function validatePdIdOrThrow(pdIdRaw) {
     throw error;
   }
   return pdId;
+}
+
+const AUTO_PD_ID_START = 10000;
+
+async function allocateNextBomPdId(startFrom = AUTO_PD_ID_START) {
+  const floor = Number.isFinite(Number(startFrom)) ? Math.max(AUTO_PD_ID_START, Number(startFrom)) : AUTO_PD_ID_START;
+  const rows = await db.all(`
+    SELECT pd_id
+    FROM bom_records
+    WHERE pd_id IS NOT NULL
+      AND trim(pd_id) != ''
+  `);
+
+  const used = new Set();
+  for (const row of rows || []) {
+    const value = normalizeText(row?.pd_id);
+    if (!value || !/^\d+$/.test(value)) {
+      continue;
+    }
+
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric >= floor) {
+      used.add(numeric);
+    }
+  }
+
+  let candidate = floor;
+  while (used.has(candidate)) {
+    candidate += 1;
+  }
+
+  return String(candidate);
 }
 
 async function findDuplicateSapLineRecord(sapIdRaw, lineRaw, excludeRecordId = null) {
@@ -3572,41 +3148,6 @@ async function findDuplicateSapLineRecord(sapIdRaw, lineRaw, excludeRecordId = n
     [sapId, line]
   );
 }
-
-  async function getNextAvailablePdId() {
-    try {
-      // Get all PD IDs >= 10000 as numbers, sorted
-      const rows = await db.all(
-        "SELECT pd_id FROM bom_records WHERE pd_id IS NOT NULL AND CAST(pd_id AS INTEGER) >= 10000 ORDER BY CAST(pd_id AS INTEGER)",
-        []
-      );
-
-      if (rows.length === 0) {
-        return "10000"; // First available
-      }
-
-      const usedIds = rows
-        .map(r => {
-          const num = parseInt(r.pd_id, 10);
-          return Number.isFinite(num) ? num : null;
-        })
-        .filter(n => n !== null)
-        .sort((a, b) => a - b);
-
-      // Find first gap (or max+1)
-      for (let i = 0; i < usedIds.length; i++) {
-        const expected = 10000 + i;
-        if (usedIds[i] !== expected) {
-          return String(expected);
-        }
-      }
-
-      return String(usedIds[usedIds.length - 1] + 1);
-    } catch (err) {
-      console.error('Error getting next available PD ID:', err);
-      return null;
-    }
-  }
 
 function requireBomRecordWrite(req, res, next) {
   if (!req.user) {
@@ -3817,19 +3358,6 @@ app.post("/api/bom/records", auth.authMiddleware, requireBomRecordWrite, async (
       return res.status(400).json({ error: 'Request body must include a materials array.' });
     }
 
-    // Auto-assign next available PD ID (>= 10000) for new/cloned recipes.
-    const nextPdId = await getNextAvailablePdId();
-    if (!nextPdId) {
-      return res.status(500).json({ error: 'Failed to generate PD ID.' });
-    }
-    record.pd_id = nextPdId;
-
-    try {
-      validatePdIdOrThrow(record.pd_id);
-    } catch (validationErr) {
-      return res.status(validationErr.statusCode || 400).json({ error: validationErr.message });
-    }
-
     let normalizedMaterials;
     try {
       normalizedMaterials = validateAndNormalizeBomMaterials(materials);
@@ -3842,7 +3370,7 @@ app.post("/api/bom/records", auth.authMiddleware, requireBomRecordWrite, async (
       return res.status(409).json({ error: 'Duplicate recipe exists for this SAP ID and Line. Please use another SAP ID/Line combination.' });
     }
 
-    await db.run('BEGIN');
+    await db.run('BEGIN IMMEDIATE');
     try {
       // Generate explicit parent ID so child inserts never depend on driver-specific lastID behavior.
       let recordId = null;
@@ -3857,6 +3385,8 @@ app.post("/api/bom/records", auth.authMiddleware, requireBomRecordWrite, async (
       if (!recordId) {
         throw new Error('Unable to allocate BOM record ID.');
       }
+
+      const assignedPdId = await allocateNextBomPdId();
 
       const snapshotToStore = normalizeCalculationSnapshot(calculationSnapshot);
 
@@ -3875,7 +3405,7 @@ app.post("/api/bom/records", auth.authMiddleware, requireBomRecordWrite, async (
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         recordId,
-        record.sap_id || null, record.pd_id || null, record.customer || null,
+        record.sap_id || null, assignedPdId, record.customer || null,
         record.market_segment || null, record.application || null, record.smms || null,
         record.mono_bico || null, record.structure || null, record.bico_ratio_desc || null,
         record.main_raw_mat || null, record.treatment || null, record.color || null,
@@ -3923,40 +3453,16 @@ app.post("/api/bom/records", auth.authMiddleware, requireBomRecordWrite, async (
       if (sourceId) {
         await auth.auditLog(req.user.id, 'BOM_RECORD_CLONED', 'bom_record', {
           sourceRecordId: sourceId,
-          newRecordId: recordId
+          newRecordId: recordId,
+          pdId: assignedPdId
         });
       } else {
-        await auth.auditLog(req.user.id, 'BOM_RECORD_CREATED', 'bom_record', { recordId });
-      }
-
-      let submissionEmailResult = { sent: false, reason: 'not_attempted' };
-      try {
-        submissionEmailResult = await sendRecipeSubmissionEmail({
-          recipeRecord: {
-            id: recordId,
-            sap_id: record.sap_id,
-            pd_id: nextPdId,
-            customer: record.customer,
-            line: record.line
-          },
-          actorName: req.user.name || req.user.email || 'Unknown',
-          sourceRecordId: sourceId || null
+        await auth.auditLog(req.user.id, 'BOM_RECORD_CREATED', 'bom_record', {
+          recordId,
+          pdId: assignedPdId
         });
-      } catch (mailErr) {
-        submissionEmailResult = { sent: false, reason: mailErr.message || 'mail_send_failed' };
       }
-
-      if (!submissionEmailResult.sent) {
-        console.warn('Recipe submission email was not sent:', submissionEmailResult.reason);
-      }
-
-      res.status(201).json({
-        success: true,
-        id: recordId,
-        pd_id: record.pd_id || null,
-        emailSent: !!submissionEmailResult.sent,
-        emailReason: submissionEmailResult.reason || null
-      });
+      res.status(201).json({ success: true, id: recordId, pd_id: assignedPdId });
     } catch (innerErr) {
       await db.run('ROLLBACK').catch(() => {});
       throw innerErr;
@@ -4172,7 +3678,7 @@ app.get("/api/bom/recipe-summary/export", auth.authMiddleware, async (req, res) 
     const rows = data.map((item) => ({
       "Recipe Approved": item.recipeApproved || "",
       "SAP ID": item.sapId || "",
-      "PD ID": item.pfnId || "",
+      "PFN ID": item.pfnId || "",
       "Customer": item.customer || "",
       "Market Segment": item.marketSegment || "",
       "Application": item.application || "",
@@ -4301,9 +3807,6 @@ app.get("/api/bom/approvals/:id", auth.authMiddleware, requireRecipeApprovalRead
     }
 
     record.author_email = await resolveAuthorEmailByUserId(record.created_by);
-    if (!record.author_email) {
-      record.author_email = resolveAuthorEmailFromRecord(record);
-    }
 
     const materials = await db.all(
       "SELECT material_label, material_name, percentage, sort_order FROM bom_record_materials WHERE record_id = ? ORDER BY sort_order",
@@ -4359,6 +3862,7 @@ app.post("/api/bom/approvals/:id/action", auth.authMiddleware, requireRecipeAppr
 
     await auth.auditLog(req.user.id, "RECIPE_APPROVAL_ACTION", "bom_record", {
       recordId: id,
+      pdId: record.pd_id || null,
       action: normalizedAction,
       decision: mapped.approvalDecision
     });
@@ -4439,7 +3943,7 @@ app.put("/api/bom/records/:id", auth.authMiddleware, requireBomRecordWrite, asyn
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid record ID.' });
 
-    const { record, materials, sendApprovalRequest } = req.body || {};
+    const { record, materials } = req.body || {};
     if (!record || typeof record !== 'object') {
       return res.status(400).json({ error: 'Request body must include a record object.' });
     }
@@ -4447,7 +3951,7 @@ app.put("/api/bom/records/:id", auth.authMiddleware, requireBomRecordWrite, asyn
       return res.status(400).json({ error: 'Request body must include a materials array.' });
     }
 
-    const existing = await db.get('SELECT id, pd_id, recipe_approved, approval_decision, approval_comment, line, customer FROM bom_records WHERE id = ?', [id]);
+    const existing = await db.get('SELECT id, pd_id FROM bom_records WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Record not found.' });
 
     let normalizedMaterials;
@@ -4481,7 +3985,7 @@ app.put("/api/bom/records/:id", auth.authMiddleware, requireBomRecordWrite, asyn
           s_beams=?, m_beams=?, sb_throughput=?, mb_throughput=?, total_throughput=?, production_time=?,
           cores=?, slit_width=?, length_meters=?, roll_diameter=?,
           target_production=?, target_unit=?, overconsumption=?, notes=?,
-          recipe_approved=?, approval_decision=?, approval_comment=?,
+          recipe_approved='Yes', approval_decision='Approved', approval_comment=NULL,
           approval_reviewed_by=NULL, approval_reviewed_at=NULL,
           updated_at=CURRENT_TIMESTAMP
         WHERE id=?
@@ -4503,11 +4007,7 @@ app.put("/api/bom/records/:id", auth.authMiddleware, requireBomRecordWrite, asyn
         record.roll_diameter || null, record.target_production || null,
         record.target_unit || null,
         Number.isFinite(Number(record.overconsumption)) ? Number(record.overconsumption) : null,
-        record.notes || null,
-        existing.recipe_approved || 'No',
-        existing.approval_decision || 'Pending',
-        existing.approval_comment || null,
-        id
+        record.notes || null, id
       ]);
 
       await db.run('DELETE FROM bom_record_materials WHERE record_id = ?', [id]);
@@ -4521,36 +4021,11 @@ app.put("/api/bom/records/:id", auth.authMiddleware, requireBomRecordWrite, asyn
       }
 
       await db.run('COMMIT');
-      await auth.auditLog(req.user.id, 'BOM_RECORD_UPDATED', 'bom_record', { recordId: id });
-
-      let submissionEmailResult = { sent: false, reason: 'not_requested' };
-      if (sendApprovalRequest) {
-        try {
-          submissionEmailResult = await sendRecipeEditApprovalRequestEmail({
-            recipeRecord: {
-              id,
-              sap_id: record.sap_id,
-              pd_id: record.pd_id,
-              customer: record.customer || existing.customer,
-              line: record.line || existing.line
-            },
-            actorName: req.user.name || req.user.email || 'Unknown'
-          });
-        } catch (mailErr) {
-          submissionEmailResult = { sent: false, reason: mailErr.message || 'mail_send_failed' };
-        }
-
-        if (!submissionEmailResult.sent) {
-          console.warn('Recipe submission email was not sent on update:', submissionEmailResult.reason);
-        }
-      }
-
-      res.json({
-        success: true,
-        id,
-        emailSent: !!submissionEmailResult.sent,
-        emailReason: submissionEmailResult.reason || null
+      await auth.auditLog(req.user.id, 'BOM_RECORD_UPDATED', 'bom_record', {
+        recordId: id,
+        pdId: record.pd_id || existing.pd_id || null
       });
+      res.json({ success: true, id });
     } catch (innerErr) {
       await db.run('ROLLBACK').catch(() => {});
       throw innerErr;
@@ -4558,46 +4033,6 @@ app.put("/api/bom/records/:id", auth.authMiddleware, requireBomRecordWrite, asyn
   } catch (err) {
     console.error('Error updating BOM record:', err);
     res.status(500).json({ error: 'Failed to update BOM record', details: err.message });
-  }
-});
-
-app.delete("/api/bom/records/:id", auth.authMiddleware, requireRecipeDeleteAdminGroup, async (req, res) => {
-  try {
-    await ensureBomRecordStoreReady();
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isFinite(id)) {
-      return res.status(400).json({ error: "Invalid record ID." });
-    }
-
-    const existing = await db.get("SELECT id, pd_id, sap_id FROM bom_records WHERE id = ?", [id]);
-    if (!existing) {
-      return res.status(404).json({ error: "Record not found." });
-    }
-
-    await db.run("BEGIN");
-    try {
-      await db.run("DELETE FROM bom_record_materials WHERE record_id = ?", [id]);
-      await db.run("DELETE FROM bom_records WHERE id = ?", [id]);
-      await db.run("COMMIT");
-    } catch (txErr) {
-      await db.run("ROLLBACK").catch(() => {});
-      throw txErr;
-    }
-
-    await auth.auditLog(req.user.id, "BOM_RECORD_DELETED", "bom_record", {
-      recordId: id,
-      pdId: existing.pd_id || null,
-      sapId: existing.sap_id || null
-    });
-
-    return res.json({
-      success: true,
-      id,
-      message: "Recipe deleted."
-    });
-  } catch (err) {
-    console.error("Error deleting BOM record:", err);
-    return res.status(500).json({ error: "Failed to delete BOM record", details: err.message });
   }
 });
 
@@ -4649,14 +4084,8 @@ async function startServer() {
     await initializeStartupStores();
 
     app.listen(PORT, () => {
-      const mailStatus = getRecipeMailConfigStatus();
       console.log(`✓ Server running at http://localhost:${PORT}`);
       console.log(`✓ Database initialized at ${path.join(__dirname, 'data', 'mini_erp.db')}`);
-      if (mailStatus.configured) {
-        console.log(`[STARTUP] Email transport configured (port=${mailStatus.port}, secure=${mailStatus.secure})`);
-      } else {
-        console.warn(`[STARTUP] Email transport NOT configured. Missing env(s): ${mailStatus.missing.join(', ')}`);
-      }
       console.log(``);
       console.log(`Frontend routes:`);
       console.log(`  - GET / → /login.html (redirect)`);
