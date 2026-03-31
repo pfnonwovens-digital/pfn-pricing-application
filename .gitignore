@@ -28,3 +28,9 @@ azure-deployment-info.txt
 # Temporary files
 *.tmp
 temp/
+
+# Local SQLite databases (environment-specific data)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+backups/

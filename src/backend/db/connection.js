@@ -2,8 +2,13 @@
 const path = require('path');
 const fs = require('fs');
 
-const dbPath = path.join(__dirname, '../../..', 'data', 'mini_erp.db');
-const dataDir = path.join(__dirname, '../../..', 'data');
+const projectRoot = path.join(__dirname, '../../..');
+const defaultDbPath = path.join(projectRoot, 'data', 'mini_erp.db');
+const configuredDbPath = process.env.DB_PATH
+  ? path.resolve(projectRoot, process.env.DB_PATH)
+  : defaultDbPath;
+const dbPath = configuredDbPath;
+const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -86,3 +91,4 @@ class Database {
 }
 
 module.exports = new Database();
+module.exports.dbPath = dbPath;

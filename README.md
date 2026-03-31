@@ -197,11 +197,24 @@ All scripts in `scripts/` are considered part of this project. Some are recurrin
 ## Data and Database Notes
 
 - Application SQLite database is at `data/mini_erp.db`
+- Database path can be overridden with env var `DB_PATH` (relative to project root or absolute path)
 - Source Excel files for costing are in `data/`
 - Polymer index values are stored separately from index definitions
 - BOM calculator persistence uses tables such as `bom_records` and `bom_record_materials`
 - Shared BOM dropdown stores (`bom_customers`, `bom_dropdown_lists`, `bom_dropdown_list_items`) are authoritative option sources, while Recipe Browser filters are derived from persisted `bom_records` values; shared-list renames are therefore propagated into matching historical `bom_records` text columns
 - Raw material pricing uses `rm_prices`, `rm_polymer_formulas`, and `rm_plant_materials`
+
+### Moving DB Between Environments (Web → Local)
+
+- SQLite DB files are intentionally ignored by git (`data/*.db`, `data/*.db-wal`, `data/*.db-shm`).
+- Export current local DB snapshot:
+   - `npm run db:export`
+   - Optional custom output path: `npm run db:export -- --out=backups/my-snapshot.db`
+- Import DB snapshot into local environment:
+   - Stop server first
+   - `npm run db:import -- --src=backups/mini_erp-YYYYMMDD-HHMMSS.db --force`
+   - Import script auto-creates backup of current local DB into `backups/`
+- After import, start server (`npm start`) so runtime migrations can apply if needed.
 
 ## Security Notes
 

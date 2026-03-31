@@ -4467,7 +4467,7 @@ async function startServer() {
 
     app.listen(PORT, () => {
       console.log(`✓ Server running at http://localhost:${PORT}`);
-      console.log(`✓ Database initialized at ${path.join(__dirname, 'data', 'mini_erp.db')}`);
+      console.log(`✓ Database initialized at ${db.dbPath}`);
       console.log(``);
       console.log(`Frontend routes:`);
       console.log(`  - GET / → /login.html (redirect)`);
