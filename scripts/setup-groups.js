@@ -45,6 +45,18 @@ async function main() {
       }
     }
 
+    // Resolve group IDs from DB to avoid relying on insert return shape
+    const groups = await auth.getGroups();
+    adminGroup = groups.find(g => g.name === 'Admin') || adminGroup;
+    pdUsersGroup = groups.find(g => g.name === 'PD Users') || pdUsersGroup;
+
+    if (!adminGroup || !adminGroup.id) {
+      throw new Error('Admin group missing after setup');
+    }
+    if (!pdUsersGroup || !pdUsersGroup.id) {
+      throw new Error('PD Users group missing after setup');
+    }
+
     // Get users
     const adminUser = await auth.dbGet("SELECT id FROM users WHERE email = 'mfischer@pfnonwovens.com'");
     const testUser = await auth.dbGet("SELECT id FROM users WHERE email = 'testuser@pfnonwovens.com'");
