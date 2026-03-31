@@ -41,6 +41,9 @@ Test credentials (created by setup script):
 - Access Permissions matrix supports row Save, Save All for changed groups, explanatory tooltips, and visual highlighting of unsaved changes
 - Admin Access Management includes a Recipe Approval Region matrix (`CZ`, `EG`, `RSA`) to assign users from Admin + Recipe Approvals groups; one user can be assigned to multiple regions
 - Per-user effective page permissions are exposed from backend and consumed by admin-sensitive pages (FX rates, polymer pages)
+- In RM Prices module, users with page-level `Modify` on `rm-prices` have the same write capabilities as Admin users within the module (price edits, availability updates, roll prices)
+- In Line Rates module, users with page-level `Modify` on `line-rates` can import annual rate matrices (same module-level write capability as Admin)
+- Admin Access Management includes a Maintenance tab with a one-click SQLite snapshot download (`GET /api/admin/db-download`)
 - Cost dashboard with filters, currency conversion, and export
 - Product editor (search, duplicate, update, delete)
 - BOM calculator with list-driven dropdowns, throughput calculations, and recipe persistence
@@ -90,7 +93,7 @@ Test credentials (created by setup script):
     - **Percent (%)**: relative change per cell (e.g. `+5.3%`, `-2.1%`); shows `n/a` when base is zero
     - Summary rows adapt to the selected display mode
     - Export (CSV/Excel) reflects the chosen mode and names the file accordingly (e.g. `line-rates-delta-pct-2025-to-2026.xlsx`)
-  - Import from CSV/XLSX (admin/rm_prices:manage permission required); supports overwrite flag
+   - Import from CSV/XLSX (admin or page-level `line-rates:modify`; legacy fallback `rm_prices:manage`); supports overwrite flag
 
 ## Main Routes
 
@@ -207,6 +210,7 @@ All scripts in `scripts/` are considered part of this project. Some are recurrin
 ### Moving DB Between Environments (Web → Local)
 
 - SQLite DB files are intentionally ignored by git (`data/*.db`, `data/*.db-wal`, `data/*.db-shm`).
+- On deployed environments, admins can download a live DB snapshot directly from Admin Access → Maintenance (`GET /api/admin/db-download`).
 - Export current local DB snapshot:
    - `npm run db:export`
    - Optional custom output path: `npm run db:export -- --out=backups/my-snapshot.db`

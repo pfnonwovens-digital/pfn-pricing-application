@@ -1106,6 +1106,34 @@ function requireFxRatesManage(req, res, next) {
     });
 }
 
+function requireLineRatesManage(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  Promise.resolve()
+    .then(async () => {
+      if (auth.hasPermission(req.user.role, "user:manage")) {
+        return true;
+      }
+      if (await hasPagePermission(req.user.id, "line-rates", "modify")) {
+        return true;
+      }
+      // Backward compatibility for legacy group permissions.
+      return hasGroupPermission(req.user.id, "rm_prices:manage");
+    })
+    .then((allowed) => {
+      if (!allowed) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+      return next();
+    })
+    .catch((err) => {
+      console.error("line_rates permission check failed:", err);
+      return res.status(500).json({ error: "Failed to verify permissions" });
+    });
+}
+
 function requirePolymerIndexManage(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: "Not authenticated" });
@@ -2819,7 +2847,7 @@ app.get("/api/line-rates/:year", auth.authMiddleware, async (req, res) => {
   }
 });
 
-app.post("/api/line-rates/import", auth.authMiddleware, requireRmPricesManage, async (req, res) => {
+app.post("/api/line-rates/import", auth.authMiddleware, requireLineRatesManage, async (req, res) => {
   try {
     const { year, raw, rows, overwrite } = req.body || {};
     const normalizedYear = parseOptionalYear(year);

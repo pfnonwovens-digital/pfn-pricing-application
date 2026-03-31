@@ -6,6 +6,10 @@ All notable changes to the Mini ERP system are documented here. For current feat
 
 ### Added
 
+#### Admin DB Snapshot Download
+- Added admin-only endpoint `GET /api/admin/db-download` to stream the currently configured SQLite database file as an attachment
+- Added **Maintenance** tab to Admin Access page with **Download DB Snapshot** action (authorized fetch with bearer token + browser file download)
+
 #### RM Prices — Category Filter
 - New **Category** dropdown filter (All / SB polymer / MB polymer / Pigment / Additive / Surfactant) on the Raw Material Price Management page
 - Filter works in combination with the existing Status and Search (material name) filters
@@ -28,6 +32,21 @@ All notable changes to the Mini ERP system are documented here. For current feat
 - New server route `GET /rm-prices/roll` serving `src/frontend/rm-prices-roll.html`
 
 ### Fixed
+
+#### Access Permissions — Modify parity with Admin (module scope)
+- RM Prices frontend permission checks now honor page-level `modify` (`page:rm-prices:modify`) in addition to legacy `rm_prices:manage`, so users with Modify can:
+  - edit and save prices in Raw Material Price Management
+  - update Raw Material Availability Matrix
+  - roll prices on Roll Raw Material Prices page
+- Line Rates import backend now uses module-specific permission middleware (`line-rates` modify) instead of RM Prices middleware
+- Line Rates frontend permission check now honors page-level `modify` (`page:line-rates:modify`) with legacy fallback
+
+#### Setup Groups script robustness
+- Fixed `scripts/setup-groups.js` to always resolve group IDs from DB after create/check steps before assigning users to groups
+- Prevents false `Group not found` failures during initial environment bootstrap
+
+#### RM Prices toolbar button styling
+- On Raw Material Price Management page, **Material Availability Matrix** and **Roll Prices** buttons now use the same blue primary style as **Load Sheet**
 
 #### RM Prices — `seedPlantMaterialsFromBomLists` concurrent transaction crash
 - Fixed `SQLITE_ERROR: cannot start a transaction within a transaction` that occurred when two parallel calls to `GET /api/rm-prices/sheet` (e.g. loading source and target period simultaneously on the Roll page) both triggered `seedPlantMaterialsFromBomLists()` at the same time

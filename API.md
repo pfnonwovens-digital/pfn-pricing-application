@@ -13,8 +13,13 @@ Base URL:
 - Raw material pricing endpoints require a valid token.
 - Raw material pricing write endpoints require either:
   - role permission `user:manage` (admin-level), or
-  - group permission `rm_prices:manage`
+  - page permission `page:rm-prices:modify`, or
+  - legacy group permission `rm_prices:manage`
 - FX rates endpoints require a valid token.
+- Line rates import endpoint requires either:
+  - role permission `user:manage` (admin-level), or
+  - page permission `page:line-rates:modify`, or
+  - legacy group permission `rm_prices:manage`
 - Page-level permissions can be configured per group using token keys:
   - `page:<page-key>:read`
   - `page:<page-key>:modify`
@@ -134,6 +139,10 @@ Base URL:
 - `DELETE /api/admin/users/:userId/groups/:groupId`
 - `GET /api/admin/audit-logs`
 - `GET /api/admin/audit-logs/stats`
+- `GET /api/admin/db-download`
+  - Admin-only endpoint that downloads the currently used SQLite DB file.
+  - Requires `user:manage` permission.
+  - Response is a file attachment named like `mini_erp-prod-YYYYMMDD-HHMMSS.db`.
 
 ## Polymer Index Endpoints
 
@@ -362,21 +371,21 @@ Response shape:
 - `GET /api/rm-prices/plant-materials` (auth required)
   - Lists plant-material availability rows (`rm_plant_materials`)
 
-- `POST /api/rm-prices` (auth + `rm_prices:manage`)
+- `POST /api/rm-prices` (auth + RM Prices modify)
   - Upsert manual monthly price
   - Body fields: `material_list_key`, `material_name`, `plant`, `year`, `month`, `price`, `currency`
 
-- `POST /api/rm-prices/import` (auth + `rm_prices:manage`)
+- `POST /api/rm-prices/import` (auth + RM Prices modify)
   - Bulk import/upsert prices from JSON `rows`
 
-- `POST /api/rm-prices/import-non-polymer` (auth + `rm_prices:manage`)
+- `POST /api/rm-prices/import-non-polymer` (auth + RM Prices modify)
   - Bulk import/upsert prices from JSON `rows` while skipping polymer categories (`list_sb`, `list_mb`)
   - Response includes `skipped_polymer` count
 
-- `POST /api/rm-prices/calculate-polymer` (auth + `rm_prices:manage`)
+- `POST /api/rm-prices/calculate-polymer` (auth + RM Prices modify)
   - Calculates polymer prices from active formulas and index values for selected period/plant
 
-- `POST /api/rm-prices/roll` (auth + `rm_prices:manage`)
+- `POST /api/rm-prices/roll` (auth + RM Prices modify)
   - Copies raw material prices from a source period to a target period for a given plant
   - Body fields:
     - `from_year`, `from_month` — source period
@@ -386,21 +395,21 @@ Response shape:
     - `overwrite` *(boolean)* — if `false`, materials already priced in the target period are skipped
   - Response: `{ success, result: { source, target, total_source, copied, skipped_existing } }`
 
-- `POST /api/rm-prices/formulas` (auth + `rm_prices:manage`)
+- `POST /api/rm-prices/formulas` (auth + RM Prices modify)
   - Create/update one polymer formula
 
-- `DELETE /api/rm-prices/formulas/:id` (auth + `rm_prices:manage`)
+- `DELETE /api/rm-prices/formulas/:id` (auth + RM Prices modify)
   - Delete one polymer formula by ID
 
-- `PUT /api/rm-prices/plant-materials` (auth + `rm_prices:manage`)
+- `PUT /api/rm-prices/plant-materials` (auth + RM Prices modify)
   - Update availability matrix assignments
   - Body: `{ "assignments": [{ "material_list_key", "material_name", "plant", "active" }] }`
 
-- `POST /api/rm-prices/materials/add` (auth + `rm_prices:manage`)
+- `POST /api/rm-prices/materials/add` (auth + RM Prices modify)
   - Adds material into BOM list and activates selected plants
   - Supports optional surfactant numeric value via `numeric_value`
 
-- `DELETE /api/rm-prices/materials` (auth + `rm_prices:manage`)
+- `DELETE /api/rm-prices/materials` (auth + RM Prices modify)
   - Permanently deletes a material everywhere in the database (transactional)
   - Body: `{ "material_list_key": "...", "material_name": "..." }`
   - Removes from: `bom_dropdown_list_items`, `rm_prices`, `rm_polymer_formulas`, `rm_plant_materials`, `bom_record_materials`, `bom_records` (records where this is the main raw material)
@@ -551,7 +560,7 @@ All endpoints require a valid auth token.
 
 - `POST /api/line-rates/import`
   - Imports an annual rate matrix from a raw 2-D array (as parsed from CSV/XLSX).
-  - Requires `user:manage` or `rm_prices:manage` permission.
+  - Requires `user:manage` or `page:line-rates:modify` permission (legacy fallback: `rm_prices:manage`).
   - Request body:
 
 ```json
