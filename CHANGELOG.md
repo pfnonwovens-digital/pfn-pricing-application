@@ -6,6 +6,14 @@ All notable changes to the Mini ERP system are documented here. For current feat
 
 ### Added
 
+#### Read Permission Enforcement on All Module Pages
+- All 10 module pages now block access when the user lacks Read permission for that page
+- Previously 6 pages only checked authentication (not page-level Read); now they fetch `/api/auth/me/access-permissions` on load and redirect to `/dashboard` with an alert if `pages[key].read` is false
+- Pages updated: **RM Prices** (`rm-prices.html`), **Material Availability Matrix** (`rm-price-availability.html`), **Roll Prices** (`rm-prices-roll.html`), **Line Rates** (`line-rates-management.html`), **BOM Calculator** (`bom-calculator.html`), **BOM Recipe Browser** (`bom-recipe-browser.html`)
+- Pages already protected (no change needed): FX Rates, Polymer Indexes, Recipe Edit/Clone, Recipe Approval
+- Admin role bypasses the read check on all pages (consistent with existing permission model)
+- Dashboard tile hiding (already in place) combined with this page-level gate provides defense-in-depth: tiles are not rendered for unauthorized pages, and direct URL navigation is also blocked
+
 #### Admin DB Snapshot Download
 - Added admin-only endpoint `GET /api/admin/db-download` to stream the currently configured SQLite database file as an attachment
 - Added **Maintenance** tab to Admin Access page with **Download DB Snapshot** action (authorized fetch with bearer token + browser file download)

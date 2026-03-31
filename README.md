@@ -43,6 +43,7 @@ Test credentials (created by setup script):
 - Per-user effective page permissions are exposed from backend and consumed by admin-sensitive pages (FX rates, polymer pages)
 - In RM Prices module, users with page-level `Modify` on `rm-prices` have the same write capabilities as Admin users within the module (price edits, availability updates, roll prices)
 - In Line Rates module, users with page-level `Modify` on `line-rates` can import annual rate matrices (same module-level write capability as Admin)
+- All module pages enforce Read permission on load: if a non-admin user navigates directly to a module URL without `Read` access, they receive an alert and are redirected to the dashboard. Dashboard tile hiding provides an additional layer (tiles are not rendered for pages the user cannot read)
 - Admin Access Management includes a Maintenance tab with a one-click SQLite snapshot download (`GET /api/admin/db-download`)
 - Cost dashboard with filters, currency conversion, and export
 - Product editor (search, duplicate, update, delete)
