@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Roll Raw Material Prices</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .page-wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+    .top-bar { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+
+    .period-row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+    .period-box { background: #f5f7fb; border: 1px solid #dbe3f0; border-radius: 8px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .period-box h3 { margin: 0 0 4px; font-size: 0.95em; color: #1d355d; text-transform: uppercase; letter-spacing: 0.04em; }
+    .period-fields { display: flex; gap: 10px; align-items: center; }
+    .period-fields label { font-weight: 600; font-size: 0.9em; }
+    .period-fields input { width: 80px; padding: 6px 8px; border: 1px solid #cfd8e3; border-radius: 6px; }
+
+    .arrow-sep { font-size: 1.8em; color: #1f5fbf; padding-bottom: 10px; align-self: flex-end; }
+
+    .filters-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: #f5f7fb; border: 1px solid #dbe3f0; border-radius: 8px; padding: 10px 12px; }
+    .filters-row label { font-weight: 600; }
+    .filters-row select, .filters-row input { padding: 6px 8px; border: 1px solid #cfd8e3; border-radius: 6px; }
+
+    .actions-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .overwrite-check { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.95em; }
+    .overwrite-check input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+
+    .btn { border: none; border-radius: 6px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: #1f5fbf; color: #fff; }
+    .btn-secondary { background: #e9eef8; color: #1d355d; }
+    .btn-success { background: #2e7d32; color: #fff; font-size: 1em; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status { margin: 10px 0 14px; min-height: 20px; font-weight: 600; }
+    .status.error { color: #b71c1c; }
+    .status.ok { color: #1b5e20; }
+
+    .summary-note { font-size: 0.9em; color: #555; margin-bottom: 8px; min-height: 18px; }
+
+    .table-wrap { overflow: auto; border: 1px solid #dbe3f0; border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; }
+    th, td { border-bottom: 1px solid #ecf0f6; padding: 9px 10px; text-align: left; }
+    th { position: sticky; top: 0; background: #dce8f8; color: #102a43; z-index: 1; font-weight: 700; }
+    th.th-source { background: #d0e8f8; }
+    th.th-target { background: #d4edda; }
+
+    tr.src-missing td.src-cell { color: #b71c1c; font-style: italic; }
+    td.tgt-cell-filled { color: #1b5e20; font-weight: 600; }
+    td.tgt-cell-empty { color: #999; font-style: italic; }
+    .arrow-col { color: #1f5fbf; font-weight: 700; text-align: center; }
+    .result-box { margin-top: 14px; padding: 12px 16px; border-radius: 8px; border: 1px solid #c8e6c9; background: #f1f8f2; font-size: 0.95em; line-height: 1.7; }
+    .result-box.error { border-color: #ffcdd2; background: #fff8f8; }
+    .result-box strong { color: #1b5e20; }
+    .result-box.error strong { color: #b71c1c; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="app-header">
+      <div class="app-branding">
+        <img src="/data/PFN_logo.png" alt="PFN" class="company-logo" />
+        <div class="app-title-wrap">
+          <h1>Roll Raw Material Prices</h1>
+          <p>Copy prices from one period to another</p>
+        </div>
+      </div>
+      <div class="app-top-actions">
+        <button class="action-btn btn-nav" onclick="window.location.href='/rm-prices'">Back to RM Prices</button>
+        <button id="changePasswordBtn" class="action-btn btn-password" style="display:none;">Change Password</button>
+        <button id="adminBtn" class="action-btn btn-admin" style="display:none;">Admin</button>
+        <button class="action-btn btn-logout" onclick="auth.logout()">Logout</button>
+      </div>
+    </header>
+
+    <div class="page-wrap">
+
+      <!-- Period selectors -->
+      <div class="top-bar">
+        <div class="period-row">
+          <div class="period-box">
+            <h3>Source Period (Copy From)</h3>
+            <div class="period-fields">
+              <label for="fromYear">Year</label>
+              <input id="fromYear" type="number" min="2000" max="2100" />
+              <label for="fromMonth">Month</label>
+              <input id="fromMonth" type="number" min="1" max="12" />
+            </div>
+          </div>
+
+          <div class="arrow-sep">&#8594;</div>
+
+          <div class="period-box">
+            <h3>Target Period (Copy To)</h3>
+            <div class="period-fields">
+              <label for="toYear">Year</label>
+              <input id="toYear" type="number" min="2000" max="2100" />
+              <label for="toMonth">Month</label>
+              <input id="toMonth" type="number" min="1" max="12" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters-row">
+          <label for="plantSelect">Plant</label>
+          <select id="plantSelect">
+            <option value="CZ">CZ</option>
+            <option value="EG">EG</option>
+            <option value="ZA">ZA</option>
+          </select>
+
+          <label for="categoryFilter">Category</label>
+          <select id="categoryFilter">
+            <option value="">All</option>
+            <option value="list_sb">SB polymer</option>
+            <option value="list_mb">MB polymer</option>
+            <option value="list_pigment">Pigment</option>
+            <option value="list_additive">Additive</option>
+            <option value="list_surfactant">Surfactant</option>
+          </select>
+
+          <label for="nameFilter">Search</label>
+          <input id="nameFilter" type="text" placeholder="Filter by name..." style="width:200px;" />
+
+          <button class="btn btn-primary" onclick="previewSource()">Preview Source</button>
+        </div>
+
+        <!-- Copy action -->
+        <div class="actions-row">
+          <label class="overwrite-check">
+            <input type="checkbox" id="overwriteCheck" />
+            Overwrite existing prices in target period
+          </label>
+          <button id="copyBtn" class="btn btn-success" onclick="copyPrices()" disabled>Copy Prices</button>
+        </div>
+      </div>
+
+      <div id="status" class="status"></div>
+      <div id="summaryNote" class="summary-note"></div>
+
+      <div id="resultBox" class="result-box hidden"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th rowspan="2">Category</th>
+              <th rowspan="2">Material</th>
+              <th colspan="3" class="th-source" style="text-align:center;" id="thSourceLabel">Source</th>
+              <th rowspan="2" class="arrow-col">&#8594;</th>
+              <th colspan="3" class="th-target" style="text-align:center;" id="thTargetLabel">Target</th>
+            </tr>
+            <tr>
+              <th class="th-source">Price</th>
+              <th class="th-source">Cur.</th>
+              <th class="th-source">Period</th>
+              <th class="th-target">Price</th>
+              <th class="th-target">Cur.</th>
+              <th class="th-target">Period</th>
+            </tr>
+          </thead>
+          <tbody id="previewBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/auth.js"></script>
+  <script>
+    let previewRows = [];   // merged rows: { ...sourceRow, tgt_price, tgt_currency, tgt_origin_year, tgt_origin_month, tgt_status }
+
+    function setStatus(msg, type) {
+      const el = document.getElementById('status');
+      el.textContent = msg || '';
+      el.className = `status ${type || ''}`.trim();
+    }
+
+    function periodLabel(year, month) {
+      if (!year || !month) return 'N/A';
+      return `${String(month).padStart(2, '0')}/${year}`;
+    }
+
+    function categoryLabel(listKey) {
+      const map = {
+        list_sb: 'SB polymer',
+        list_mb: 'MB polymer',
+        list_pigment: 'Pigment',
+        list_additive: 'Additive',
+        list_surfactant: 'Surfactant'
+      };
+      return map[listKey] || listKey;
+    }
+
+    function formatPrice(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n.toFixed(2) : 'N/A';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = String(text ?? '');
+      return div.innerHTML;
+    }
+
+    function currentPeriodDefaults() {
+      const now = new Date();
+      document.getElementById('fromYear').value = now.getFullYear();
+      document.getElementById('fromMonth').value = now.getMonth() + 1;
+      // Target: next month
+      const toDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      document.getElementById('toYear').value = toDate.getFullYear();
+      document.getElementById('toMonth').value = toDate.getMonth() + 1;
+    }
+
+    function getFilteredPreview() {
+      const catFilter = document.getElementById('categoryFilter').value;
+      const nameFilter = (document.getElementById('nameFilter').value || '').trim().toLowerCase();
+      return previewRows.filter((row) => {
+        if (catFilter && row.material_list_key !== catFilter) return false;
+        if (nameFilter && !(row.material_name || '').toLowerCase().includes(nameFilter)) return false;
+        return true;
+      });
+    }
+
+    function renderPreview() {
+      const rows = getFilteredPreview();
+      const tbody = document.getElementById('previewBody');
+      tbody.innerHTML = '';
+
+      const fromYear = document.getElementById('fromYear').value;
+      const fromMonth = document.getElementById('fromMonth').value;
+      const toYear = document.getElementById('toYear').value;
+      const toMonth = document.getElementById('toMonth').value;
+      const plant = document.getElementById('plantSelect').value;
+
+      document.getElementById('thSourceLabel').textContent = `Source: ${periodLabel(fromYear, fromMonth)}`;
+      document.getElementById('thTargetLabel').textContent = `Target: ${periodLabel(toYear, toMonth)}`;
+
+      rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        if (row.status === 'missing') tr.classList.add('src-missing');
+
+        const srcPrice = (row.price === null || row.price === undefined) ? '' : formatPrice(row.price);
+        const srcCur = row.currency || '';
+        const srcPeriod = (row.origin_year && row.origin_month) ? periodLabel(row.origin_year, row.origin_month) : (row.status === 'missing' ? '—' : '');
+
+        const hasTgt = row.tgt_price !== null && row.tgt_price !== undefined;
+        const tgtPrice = hasTgt ? formatPrice(row.tgt_price) : '—';
+        const tgtCur = row.tgt_currency || (hasTgt ? '' : '—');
+        const tgtPeriod = (row.tgt_origin_year && row.tgt_origin_month)
+          ? periodLabel(row.tgt_origin_year, row.tgt_origin_month)
+          : (row.tgt_status === 'missing' ? '—' : '—');
+        const tgtClass = hasTgt ? 'tgt-cell-filled' : 'tgt-cell-empty';
+
+        tr.innerHTML = `
+          <td>${escapeHtml(categoryLabel(row.material_list_key))}</td>
+          <td>${escapeHtml(row.material_name)}</td>
+          <td class="src-cell">${escapeHtml(srcPrice || '—')}</td>
+          <td class="src-cell">${escapeHtml(srcCur || '—')}</td>
+          <td class="src-cell" style="font-size:0.85em;color:#555">${escapeHtml(srcPeriod)}</td>
+          <td class="arrow-col">&#8594;</td>
+          <td class="${tgtClass}">${escapeHtml(tgtPrice)}</td>
+          <td class="${tgtClass}">${escapeHtml(tgtCur)}</td>
+          <td class="${tgtClass}" style="font-size:0.85em;">${escapeHtml(tgtPeriod)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      const catFilter = document.getElementById('categoryFilter').value;
+      const catLabel = catFilter ? categoryLabel(catFilter) : 'All';
+      const srcPricedCount = rows.filter((r) => r.status !== 'missing').length;
+      const tgtPricedCount = rows.filter((r) => r.tgt_price !== null && r.tgt_price !== undefined).length;
+      document.getElementById('summaryNote').textContent =
+        `Plant ${plant} | Category: ${catLabel} | Materials: ${rows.length} | Source priced: ${srcPricedCount} | Target already priced: ${tgtPricedCount}`;
+
+      document.getElementById('copyBtn').disabled = srcPricedCount === 0;
+    }
+
+    async function previewSource() {
+      setStatus('Loading both periods...', '');
+      document.getElementById('resultBox').classList.add('hidden');
+      document.getElementById('copyBtn').disabled = true;
+
+      const fromYear = Number(document.getElementById('fromYear').value);
+      const fromMonth = Number(document.getElementById('fromMonth').value);
+      const toYear = Number(document.getElementById('toYear').value);
+      const toMonth = Number(document.getElementById('toMonth').value);
+      const plant = document.getElementById('plantSelect').value;
+      const token = auth.getToken();
+
+      try {
+        const [srcResp, tgtResp] = await Promise.all([
+          fetch(`/api/rm-prices/sheet?year=${fromYear}&month=${fromMonth}&plant=${encodeURIComponent(plant)}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`/api/rm-prices/sheet?year=${toYear}&month=${toMonth}&plant=${encodeURIComponent(plant)}`, { headers: { Authorization: `Bearer ${token}` } })
+        ]);
+
+        const srcData = await srcResp.json();
+        if (!srcResp.ok) throw new Error(srcData.error || 'Failed to load source period');
+        const tgtData = await tgtResp.json();
+        if (!tgtResp.ok) throw new Error(tgtData.error || 'Failed to load target period');
+
+        // Build lookup map for target by list_key + name
+        const tgtMap = new Map();
+        for (const r of (tgtData.rows || [])) {
+          tgtMap.set(`${r.material_list_key}:${String(r.material_name).toLowerCase()}`, r);
+        }
+
+        // Merge source rows with target data.
+        // Only treat target as "priced" when it has an exact price for the requested period
+        // (status === 'priced'). Fallback rows from older periods are treated as empty.
+        previewRows = (srcData.rows || []).map((row) => {
+          const tgt = tgtMap.get(`${row.material_list_key}:${String(row.material_name).toLowerCase()}`);
+          const tgtExact = tgt && tgt.status === 'priced';
+          return {
+            ...row,
+            tgt_price: tgtExact ? tgt.price : null,
+            tgt_currency: tgtExact ? tgt.currency : null,
+            tgt_origin_year: tgtExact ? tgt.origin_year : null,
+            tgt_origin_month: tgtExact ? tgt.origin_month : null,
+            tgt_status: tgt ? tgt.status : 'missing'
+          };
+        });
+
+        renderPreview();
+        setStatus('Periods loaded. Review and click Copy Prices.', 'ok');
+      } catch (err) {
+        setStatus(`Error: ${err.message}`, 'error');
+        previewRows = [];
+        renderPreview();
+      }
+    }
+
+    async function copyPrices() {
+      const fromYear = Number(document.getElementById('fromYear').value);
+      const fromMonth = Number(document.getElementById('fromMonth').value);
+      const toYear = Number(document.getElementById('toYear').value);
+      const toMonth = Number(document.getElementById('toMonth').value);
+      const plant = document.getElementById('plantSelect').value;
+      const categoryFilter = document.getElementById('categoryFilter').value;
+      const overwrite = document.getElementById('overwriteCheck').checked;
+
+      if (fromYear === toYear && fromMonth === toMonth) {
+        setStatus('Source and target period must be different.', 'error');
+        return;
+      }
+
+      setStatus('Copying prices...', '');
+      document.getElementById('resultBox').classList.add('hidden');
+      document.getElementById('copyBtn').disabled = true;
+
+      try {
+        const resp = await fetch('/api/rm-prices/roll', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${auth.getToken()}`
+          },
+          body: JSON.stringify({
+            from_year: fromYear,
+            from_month: fromMonth,
+            to_year: toYear,
+            to_month: toMonth,
+            plant,
+            material_list_key: categoryFilter || null,
+            overwrite
+          })
+        });
+
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Copy failed');
+
+        const r = data.result;
+        const resultEl = document.getElementById('resultBox');
+        resultEl.className = 'result-box';
+        resultEl.innerHTML = `
+          <strong>Copy completed.</strong><br/>
+          Source: Plant <b>${escapeHtml(r.source.plant)}</b> | ${periodLabel(r.source.year, r.source.month)}<br/>
+          Target: Plant <b>${escapeHtml(r.target.plant)}</b> | ${periodLabel(r.target.year, r.target.month)}<br/>
+          Source materials: <b>${r.total_source}</b> |
+          Copied: <b>${r.copied}</b> |
+          Skipped (already existed): <b>${r.skipped_existing}</b>
+        `;
+        resultEl.classList.remove('hidden');
+        setStatus('Done.', 'ok');
+        document.getElementById('copyBtn').disabled = false;
+      } catch (err) {
+        const resultEl = document.getElementById('resultBox');
+        resultEl.className = 'result-box error';
+        resultEl.innerHTML = `<strong>Error:</strong> ${escapeHtml(err.message)}`;
+        resultEl.classList.remove('hidden');
+        setStatus(`Error: ${err.message}`, 'error');
+        document.getElementById('copyBtn').disabled = false;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!auth.isAuthenticated()) {
+        window.location.href = '/login.html';
+        return;
+      }
+
+      await auth.configureHeaderButtons();
+      currentPeriodDefaults();
+
+      document.getElementById('categoryFilter').addEventListener('change', () => {
+        if (previewRows.length) renderPreview();
+      });
+      document.getElementById('nameFilter').addEventListener('input', () => {
+        if (previewRows.length) renderPreview();
+      });
+    });
+  </script>
+</body>
+</html>

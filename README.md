@@ -56,6 +56,7 @@ Test credentials (created by setup script):
 - Recipe submission email routing is region-aware: recipients are resolved by recipe line region from the Admin Recipe Approval Region matrix (with optional env fallback)
 - If recipe line cannot be mapped to a known region, submission email still uses env fallback recipients (`RECIPE_SUBMISSION_NOTIFY_TO`, `RECIPE_APPROVAL_NOTIFY_TO`, `APPROVAL_NOTIFY_TO`)
 - Recipe decision emails sent to authors omit SAP ID in subject/body and omit Recipe ID from the body
+- Recipe Approval pending list shows `PD ID` as the first table column (`PD ID`, `Customer`, `Line`, `Author`, `Status`, `Updated`)
 - Recipe Edit/Clone includes Created and Updated timestamps in the grid and an Admin-only Delete action
 - Audit Logs detail rendering now includes `PD ID` plus record context (`Record`, `Source`, `New`, `Action`, `Decision`) for BOM/approval actions
 - Raw Material Price Management by plant (CZ, EG, ZA): monthly sheets, missing/fallback statuses, inline edits, and JSON import

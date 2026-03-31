@@ -116,27 +116,40 @@ async function getAllBomMaterials() {
   );
 }
 
-async function seedPlantMaterialsFromBomLists() {
-  const materials = await getAllBomMaterials();
-  if (!materials.length) return;
+let _seedLockPromise = null;
 
-  await db.run('BEGIN IMMEDIATE TRANSACTION');
-  try {
-    for (const material of materials) {
-      for (const plant of VALID_PLANTS) {
-        await db.run(
-          `INSERT INTO rm_plant_materials (material_list_key, material_name, plant, active)
-           VALUES (?, ?, ?, 1)
-           ON CONFLICT(material_list_key, material_name, plant) DO NOTHING`,
-          [material.material_list_key, material.material_name, plant]
-        );
+async function seedPlantMaterialsFromBomLists() {
+  // Prevent concurrent calls from starting overlapping SQLite transactions.
+  if (_seedLockPromise) return _seedLockPromise;
+
+  _seedLockPromise = (async () => {
+    try {
+      const materials = await getAllBomMaterials();
+      if (!materials.length) return;
+
+      await db.run('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        for (const material of materials) {
+          for (const plant of VALID_PLANTS) {
+            await db.run(
+              `INSERT INTO rm_plant_materials (material_list_key, material_name, plant, active)
+               VALUES (?, ?, ?, 1)
+               ON CONFLICT(material_list_key, material_name, plant) DO NOTHING`,
+              [material.material_list_key, material.material_name, plant]
+            );
+          }
+        }
+        await db.run('COMMIT');
+      } catch (err) {
+        await db.run('ROLLBACK').catch(() => {});
+        throw err;
       }
+    } finally {
+      _seedLockPromise = null;
     }
-    await db.run('COMMIT');
-  } catch (err) {
-    await db.run('ROLLBACK').catch(() => {});
-    throw err;
-  }
+  })();
+
+  return _seedLockPromise;
 }
 
 function applyFormula(formula, indexValue) {
@@ -713,6 +726,83 @@ async function calculatePolymerPrices({ plant, year, month, userId }) {
   return { updated, skipped, total_formulas: formulas.length };
 }
 
+async function rollPrices({ fromYear, fromMonth, toYear, toMonth, plant, materialListKey, overwrite, userId }) {
+  await ensureReady();
+
+  const normalizedPlant = normalizePlant(plant);
+  const normalizedFromYear = normalizeYear(fromYear);
+  const normalizedFromMonth = normalizeMonth(fromMonth);
+  const normalizedToYear = normalizeYear(toYear);
+  const normalizedToMonth = normalizeMonth(toMonth);
+
+  if (!normalizedPlant) throw new Error('Invalid plant');
+  if (!normalizedFromYear || !normalizedFromMonth) throw new Error('Invalid source year/month');
+  if (!normalizedToYear || !normalizedToMonth) throw new Error('Invalid target year/month');
+
+  const normalizedListKey = materialListKey ? normalizeMaterialKey(materialListKey) : null;
+  if (materialListKey && !normalizedListKey) throw new Error('Invalid material_list_key');
+
+  // Load source prices (exact match for from period)
+  let sourceRows;
+  if (normalizedListKey) {
+    sourceRows = await db.all(
+      `SELECT material_list_key, material_name, price, currency
+       FROM rm_prices
+       WHERE plant = ? AND year = ? AND month = ? AND material_list_key = ?`,
+      [normalizedPlant, normalizedFromYear, normalizedFromMonth, normalizedListKey]
+    );
+  } else {
+    sourceRows = await db.all(
+      `SELECT material_list_key, material_name, price, currency
+       FROM rm_prices
+       WHERE plant = ? AND year = ? AND month = ?`,
+      [normalizedPlant, normalizedFromYear, normalizedFromMonth]
+    );
+  }
+
+  let copied = 0;
+  let skippedExisting = 0;
+
+  for (const row of sourceRows) {
+    if (!overwrite) {
+      const existing = await db.get(
+        `SELECT id FROM rm_prices
+         WHERE material_list_key = ? AND material_name = ? COLLATE NOCASE AND plant = ? AND year = ? AND month = ?`,
+        [row.material_list_key, row.material_name, normalizedPlant, normalizedToYear, normalizedToMonth]
+      );
+      if (existing) {
+        skippedExisting += 1;
+        continue;
+      }
+    }
+
+    await db.run(
+      `INSERT INTO rm_prices (
+        material_list_key, material_name, plant, year, month, price, currency, price_source, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?)
+      ON CONFLICT(material_list_key, material_name, plant, year, month)
+      DO UPDATE SET
+        price = excluded.price,
+        currency = excluded.currency,
+        price_source = 'manual',
+        created_by = excluded.created_by,
+        updated_at = CURRENT_TIMESTAMP`,
+      [row.material_list_key, row.material_name, normalizedPlant,
+       normalizedToYear, normalizedToMonth, row.price, row.currency, userId || null]
+    );
+
+    copied += 1;
+  }
+
+  return {
+    source: { plant: normalizedPlant, year: normalizedFromYear, month: normalizedFromMonth },
+    target: { plant: normalizedPlant, year: normalizedToYear, month: normalizedToMonth },
+    total_source: sourceRows.length,
+    copied,
+    skipped_existing: skippedExisting
+  };
+}
+
 module.exports = {
   VALID_PLANTS,
   VALID_MATERIAL_KEYS,
@@ -730,5 +820,6 @@ module.exports = {
   listFormulas,
   upsertFormula,
   deleteFormula,
-  calculatePolymerPrices
+  calculatePolymerPrices,
+  rollPrices
 };

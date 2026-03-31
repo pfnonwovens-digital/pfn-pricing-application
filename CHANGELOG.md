@@ -6,7 +6,33 @@ All notable changes to the Mini ERP system are documented here. For current feat
 
 ### Added
 
-#### Documentation
+#### RM Prices — Category Filter
+- New **Category** dropdown filter (All / SB polymer / MB polymer / Pigment / Additive / Surfactant) on the Raw Material Price Management page
+- Filter works in combination with the existing Status and Search (material name) filters
+- Summary text below the table reflects the active category filter
+
+#### Roll Raw Material Prices — new page `/rm-prices/roll`
+- New frontend page accessible from the **Roll Prices** button on the Raw Material Price Management toolbar
+- Allows copying prices from a source period (Year + Month) to a target period (Year + Month) for a selected Plant
+- Optional **Category** filter limits the roll to a single material category
+- **Preview Source** button loads both periods in parallel and renders a side-by-side comparison table:
+  - Source columns (blue header): Price / Currency / Period — shows the price that would be copied, including its fallback origin period
+  - Target columns (green header): Price / Currency / Period — shows only prices that are **exactly** entered for the target period (`status = 'priced'`); fallback values are intentionally hidden to avoid confusion
+  - Rows with no source price are visually distinct
+- Summary bar: total materials visible, source priced count, target already priced count
+- **Overwrite existing prices** checkbox — when unchecked, materials that already have an exact price in the target period are skipped; when checked, they are overwritten
+- **Copy Prices** button is enabled only when at least one source-priced material is visible; result box shows copied / skipped counts after completion
+- **Search** filter on material name works in combination with Category filter and is applied to the preview table in real time without re-fetching
+- New backend function `rollPrices()` in `src/backend/rm-prices.js` reads exact prices from the source period and upserts them into the target period (respecting `overwrite` flag)
+- New API endpoint `POST /api/rm-prices/roll` (requires `rm_prices:manage` permission)
+- New server route `GET /rm-prices/roll` serving `src/frontend/rm-prices-roll.html`
+
+### Fixed
+
+#### RM Prices — `seedPlantMaterialsFromBomLists` concurrent transaction crash
+- Fixed `SQLITE_ERROR: cannot start a transaction within a transaction` that occurred when two parallel calls to `GET /api/rm-prices/sheet` (e.g. loading source and target period simultaneously on the Roll page) both triggered `seedPlantMaterialsFromBomLists()` at the same time
+- Added a `_seedLockPromise` serialization lock: if a seed is already in progress, subsequent callers await the same promise instead of starting a second `BEGIN IMMEDIATE TRANSACTION`
+
 - Added Line Operating Rates Management documentation in `README.md`, `API.md`, and `CHANGELOG.md` (page features, API endpoints, delta comparison behaviour).
 - Added a complete `scripts/` catalog in `README.md` and marked all current scripts as official project components.
 - Documented each script by purpose group (setup/maintenance, import/backfill, mapping/analysis) and added operational safety notes.
@@ -32,6 +58,7 @@ All notable changes to the Mini ERP system are documented here. For current feat
 - Recipe decision emails to authors now omit SAP ID from subject/body and omit Recipe ID from the email body.
 - Recipe Edit/Clone detail popup now closes automatically after successful Save/Copy.
 - User-facing identifier wording is standardized to `PD ID` (replacing legacy label variants) across UI labels, export headers, and email bodies/subjects.
+- Recipe Approval pending list restores `PD ID` as the first column (regression fix).
 
 #### Audit Logs
 - Improved Audit Logs table header contrast in Admin Access Management for better readability.

@@ -306,6 +306,7 @@ Response shape:
 
 - `GET /api/bom/approvals/pending`
   - Returns recipes waiting for review (`recipe_approved = "No"`)
+  - Includes `pd_id` used by the first `PD ID` column in the Recipe Approval list UI
 
 - `GET /api/bom/approvals/:id`
   - Returns one pending recipe detail with materials and resolved `author_email`
@@ -374,6 +375,16 @@ Response shape:
 
 - `POST /api/rm-prices/calculate-polymer` (auth + `rm_prices:manage`)
   - Calculates polymer prices from active formulas and index values for selected period/plant
+
+- `POST /api/rm-prices/roll` (auth + `rm_prices:manage`)
+  - Copies raw material prices from a source period to a target period for a given plant
+  - Body fields:
+    - `from_year`, `from_month` — source period
+    - `to_year`, `to_month` — target period
+    - `plant` — one of `CZ`, `EG`, `ZA`
+    - `material_list_key` *(optional)* — limit roll to one category (e.g. `list_pigment`)
+    - `overwrite` *(boolean)* — if `false`, materials already priced in the target period are skipped
+  - Response: `{ success, result: { source, target, total_source, copied, skipped_existing } }`
 
 - `POST /api/rm-prices/formulas` (auth + `rm_prices:manage`)
   - Create/update one polymer formula

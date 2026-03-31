@@ -431,6 +431,12 @@ function getRecipeMailTransportConfig() {
   };
 }
 
+function getEmailVisualSpacerLines(count = 4) {
+  // Many mail gateways/clients trim trailing empty lines;
+  // NBSP lines stay visually blank but are less likely to be stripped.
+  return Array.from({ length: count }, () => '\u00A0');
+}
+
 async function sendRecipeDecisionEmail({ toEmail, reviewerName, decisionLabel, comment, recipeRecord }) {
   if (!toEmail) {
     return { sent: false, reason: "missing_author_email" };
@@ -465,7 +471,8 @@ async function sendRecipeDecisionEmail({ toEmail, reviewerName, decisionLabel, c
     "Comment:",
     comment,
     "",
-    "Open mini-ERP for details."
+    "Open mini-ERP for details.",
+    ...getEmailVisualSpacerLines(4)
   ];
 
   await transporter.sendMail({
@@ -562,7 +569,8 @@ async function sendRecipeSubmissionEmail({ recipeRecord, authorName, isClone = f
     `Region: ${region || 'N/A'}`,
     `Author: ${authorName || 'N/A'}`,
     '',
-    'Open mini-ERP Recipe Approval to review.'
+    'Open mini-ERP Recipe Approval to review.',
+    ...getEmailVisualSpacerLines(4)
   ];
 
   try {
@@ -1920,6 +1928,22 @@ app.get("/rm-prices/availability", (req, res, next) => {
   }
 });
 
+app.get("/rm-prices/roll", (req, res, next) => {
+  try {
+    const filePath = path.join(__dirname, "src", "frontend", "rm-prices-roll.html");
+    console.log("[ROUTE] GET /rm-prices/roll - Serving:", filePath);
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error("[ERROR] Failed to send rm-prices-roll.html:", err);
+        next(err);
+      }
+    });
+  } catch (err) {
+    console.error("[ERROR] RM prices roll route error:", err);
+    next(err);
+  }
+});
+
 app.get("/polymer-indexes", (req, res, next) => {
   try {
     const filePath = path.join(__dirname, "src", "frontend", "polymer-indexes.html");
@@ -2750,6 +2774,25 @@ app.post("/api/rm-prices/calculate-polymer", auth.authMiddleware, requireRmPrice
     res.json({ success: true, result });
   } catch (err) {
     res.status(400).json({ error: err.message || "Failed to calculate polymer prices" });
+  }
+});
+
+app.post("/api/rm-prices/roll", auth.authMiddleware, requireRmPricesManage, async (req, res) => {
+  try {
+    const { from_year, from_month, to_year, to_month, plant, material_list_key, overwrite } = req.body || {};
+    const result = await rmPrices.rollPrices({
+      fromYear: Number(from_year),
+      fromMonth: Number(from_month),
+      toYear: Number(to_year),
+      toMonth: Number(to_month),
+      plant,
+      materialListKey: material_list_key || null,
+      overwrite: !!overwrite,
+      userId: req.user.id
+    });
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(400).json({ error: err.message || "Failed to roll prices" });
   }
 });
 

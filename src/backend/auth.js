@@ -13,6 +13,7 @@ const fs = require('fs');
 // Database path
 const dbPath = path.join(__dirname, '..', '..', 'data', 'mini_erp.db');
 const dataDir = path.join(__dirname, '..', '..', 'data');
+const legacyAuthDbPath = path.join(__dirname, '..', 'data', 'mini_erp.db');
 
 // Ensure data directory exists
 if (!fs.existsSync(dataDir)) {
@@ -81,6 +82,115 @@ function dbAll(sql, params = []) {
       });
     });
   });
+}
+
+function legacyPathNeedsMigration() {
+  return path.resolve(legacyAuthDbPath) !== path.resolve(dbPath) && fs.existsSync(legacyAuthDbPath);
+}
+
+async function getLegacyAuthTables() {
+  if (!legacyPathNeedsMigration()) {
+    return [];
+  }
+
+  return new Promise((resolve, reject) => {
+    const legacyDb = new sqlite3.Database(legacyAuthDbPath, (openErr) => {
+      if (openErr) {
+        reject(openErr);
+        return;
+      }
+
+      legacyDb.all(
+        `SELECT name
+         FROM sqlite_master
+         WHERE type = 'table'
+           AND name IN ('users', 'audit_logs', 'groups', 'user_groups', 'access_requests')
+         ORDER BY name`,
+        (queryErr, rows) => {
+          legacyDb.close(() => {
+            if (queryErr) reject(queryErr);
+            else resolve(rows || []);
+          });
+        }
+      );
+    });
+  });
+}
+
+async function migrateLegacyAuthDatabase() {
+  const legacyTables = await getLegacyAuthTables();
+  if (!legacyTables.length) {
+    return { migrated: false, tableCount: 0 };
+  }
+
+  const tableNames = new Set(legacyTables.map((row) => row.name));
+  const legacyPathLiteral = `'${legacyAuthDbPath.replace(/'/g, "''")}'`;
+
+  await dbRun(`ATTACH DATABASE ${legacyPathLiteral} AS legacy_auth`);
+  try {
+    if (tableNames.has('users')) {
+      await dbRun(`
+        INSERT OR IGNORE INTO users (id, email, name, password_hash, role, is_active, created_at)
+        SELECT id, email, name, password_hash, role, COALESCE(is_active, 1), COALESCE(created_at, CURRENT_TIMESTAMP)
+        FROM legacy_auth.users
+      `);
+    }
+
+    if (tableNames.has('groups')) {
+      await dbRun(`
+        INSERT OR IGNORE INTO groups (id, name, description, permissions, created_at)
+        SELECT id, name, description, COALESCE(permissions, '[]'), COALESCE(created_at, CURRENT_TIMESTAMP)
+        FROM legacy_auth.groups
+      `);
+    }
+
+    if (tableNames.has('user_groups')) {
+      await dbRun(`
+        INSERT OR IGNORE INTO user_groups (id, user_id, group_id, added_at)
+        SELECT ug.id, ug.user_id, ug.group_id, COALESCE(ug.added_at, CURRENT_TIMESTAMP)
+        FROM legacy_auth.user_groups ug
+        JOIN users u ON u.id = ug.user_id
+        JOIN groups g ON g.id = ug.group_id
+      `);
+    }
+
+    if (tableNames.has('access_requests')) {
+      await dbRun(`
+        INSERT OR IGNORE INTO access_requests (
+          id, email, full_name, reason, status, requested_at, reviewed_by, reviewed_at, notes
+        )
+        SELECT ar.id,
+               ar.email,
+               ar.full_name,
+               ar.reason,
+               ar.status,
+               ar.requested_at,
+               CASE WHEN reviewer.id IS NOT NULL THEN ar.reviewed_by ELSE NULL END,
+               ar.reviewed_at,
+               ar.notes
+        FROM legacy_auth.access_requests ar
+        LEFT JOIN users reviewer ON reviewer.id = ar.reviewed_by
+      `);
+    }
+
+    if (tableNames.has('audit_logs')) {
+      await dbRun(`
+        INSERT OR IGNORE INTO audit_logs (id, user_id, action, resource, details, timestamp)
+        SELECT al.id,
+               CASE WHEN u.id IS NOT NULL THEN al.user_id ELSE NULL END,
+               al.action,
+               al.resource,
+               al.details,
+               COALESCE(al.timestamp, CURRENT_TIMESTAMP)
+        FROM legacy_auth.audit_logs al
+        LEFT JOIN users u ON u.id = al.user_id
+      `);
+    }
+  } finally {
+    await dbRun('DETACH DATABASE legacy_auth');
+  }
+
+  return { migrated: true, tableCount: tableNames.size };
 }
 
 // ==================== DATABASE INITIALIZATION ====================
@@ -152,6 +262,11 @@ async function initializeDatabase() {
         FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
       )
     `);
+
+    const migrationResult = await migrateLegacyAuthDatabase();
+    if (migrationResult.migrated) {
+      console.log(`✓ Legacy auth database migrated from src/data to shared data DB (${migrationResult.tableCount} table(s))`);
+    }
 
     console.log('✓ Database schema initialized');
   } catch (error) {

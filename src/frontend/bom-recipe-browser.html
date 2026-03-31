@@ -89,6 +89,32 @@
       letter-spacing: 0.5px;
     }
 
+    .recipes-table th.sortable-header {
+      cursor: pointer;
+      user-select: none;
+      transition: filter 0.15s ease;
+    }
+
+    .recipes-table th.sortable-header:hover {
+      filter: brightness(1.08);
+    }
+
+    .recipes-table th.sortable-header::after {
+      content: ' ↕';
+      font-size: 0.9em;
+      opacity: 0.45;
+    }
+
+    .recipes-table th.sortable-header.sorted-asc::after {
+      content: ' ▲';
+      opacity: 1;
+    }
+
+    .recipes-table th.sortable-header.sorted-desc::after {
+      content: ' ▼';
+      opacity: 1;
+    }
+
     .recipes-table td {
       padding: 15px;
       border-bottom: 1px solid #e0e0e0;
@@ -558,10 +584,18 @@
       headers.forEach((th, idx) => {
         const clone = th.cloneNode(true);
         const text = clone.textContent.replace(/\s*[▲▼]\s*$/g, '').trim();
-        clone.textContent = idx === recipeSummarySortColumn
-          ? `${text}${recipeSummarySortDirection === 'asc' ? ' ▲' : ' ▼'}`
-          : text;
-        clone.style.cursor = 'pointer';
+        clone.textContent = text;
+        clone.classList.remove('sortable-header', 'sorted-asc', 'sorted-desc');
+        clone.classList.add('sortable-header');
+        clone.title = 'Click to sort';
+
+        if (idx === recipeSummarySortColumn) {
+          clone.classList.add(recipeSummarySortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+          clone.title = recipeSummarySortDirection === 'asc'
+            ? 'Sorted ascending. Click to sort descending.'
+            : 'Sorted descending. Click to sort ascending.';
+        }
+
         th.parentNode.replaceChild(clone, th);
 
         clone.addEventListener('click', () => {

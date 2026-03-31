@@ -75,6 +75,16 @@
             <option value="ZA">ZA</option>
           </select>
 
+          <label for="categoryFilter">Category</label>
+          <select id="categoryFilter">
+            <option value="">All</option>
+            <option value="list_sb">SB polymer</option>
+            <option value="list_mb">MB polymer</option>
+            <option value="list_pigment">Pigment</option>
+            <option value="list_additive">Additive</option>
+            <option value="list_surfactant">Surfactant</option>
+          </select>
+
           <label for="statusFilter">Status</label>
           <select id="statusFilter">
             <option value="">All</option>
@@ -91,6 +101,7 @@
 
         <div class="actions">
           <button class="btn btn-secondary" onclick="window.location.href='/rm-prices/availability'">Material Availability Matrix</button>
+          <button class="btn btn-secondary" onclick="window.location.href='/rm-prices/roll'">Roll Prices</button>
           <button class="btn btn-secondary" onclick="exportSheetCsv()">Export Sheet CSV</button>
           <button class="btn btn-secondary" onclick="exportSheetExcel()">Export Sheet Excel</button>
           <button class="btn btn-secondary" onclick="exportMissing()">Export Missing</button>
@@ -239,9 +250,11 @@
     }
 
     function getFilteredRows() {
+      const categoryFilter = document.getElementById('categoryFilter').value;
       const statusFilter = document.getElementById('statusFilter').value;
       const nameFilter = (document.getElementById('materialNameFilter').value || '').trim().toLowerCase();
       return currentRows.filter((row) => {
+        if (categoryFilter && row.material_list_key !== categoryFilter) return false;
         if (statusFilter && row.status !== statusFilter) return false;
         if (nameFilter && !(row.material_name || '').toLowerCase().includes(nameFilter)) return false;
         return true;
@@ -254,10 +267,15 @@
 
       const { year, month, plant } = getCurrentSheetContext();
       const missingCount = visibleRows.filter((row) => row.missing).length;
-      const statusLabel = document.getElementById('statusFilter').value || 'all';
+      const categoryFilter = document.getElementById('categoryFilter').value;
+      const categoryLabel2 = categoryFilter ? categoryLabel(categoryFilter) : 'all';
+      const statusVal = document.getElementById('statusFilter').value || 'all';
       const nameFilter = (document.getElementById('materialNameFilter').value || '').trim();
-      const filterLabel = nameFilter ? `${statusLabel} / "${nameFilter}"` : statusLabel;
-      document.getElementById('summary').textContent = `Plant ${plant} | Period ${periodLabel(year, month)} | Visible materials: ${visibleRows.length} | Missing: ${missingCount} | Filter: ${filterLabel}`;
+      const filterParts = [];
+      if (categoryFilter) filterParts.push(categoryLabel2);
+      filterParts.push(statusVal);
+      if (nameFilter) filterParts.push(`"${nameFilter}"`);
+      document.getElementById('summary').textContent = `Plant ${plant} | Period ${periodLabel(year, month)} | Visible materials: ${visibleRows.length} | Missing: ${missingCount} | Filter: ${filterParts.join(' / ')}`;
     }
 
     async function loadSheet() {

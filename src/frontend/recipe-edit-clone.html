@@ -137,6 +137,32 @@
       letter-spacing: 0.2px;
     }
 
+    th.sortable-header {
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.15s ease;
+    }
+
+    th.sortable-header:hover {
+      background: #2a6db0;
+    }
+
+    th.sortable-header::after {
+      content: ' ↕';
+      font-size: 10px;
+      opacity: 0.45;
+    }
+
+    th.sortable-header.sorted-asc::after {
+      content: ' ▲';
+      opacity: 1;
+    }
+
+    th.sortable-header.sorted-desc::after {
+      content: ' ▼';
+      opacity: 1;
+    }
+
     tbody tr:nth-child(even) { background: #f8fbff; }
 
     .bom-cell {
@@ -421,6 +447,8 @@
     let metadata = null;
     let rows = [];
     let recipeTableScrollSyncBound = false;
+    let recipeSortColumn = null;
+    let recipeSortDirection = 'asc';
 
     let editorMode = 'edit';
     let currentRecordId = null;
@@ -589,10 +617,138 @@
       return `<span class="pill ${yes ? 'pill-yes' : 'pill-no'}">${yes ? 'Yes' : 'No'}</span>`;
     }
 
+    function getRecipeSortValue(item, columnIndex) {
+      const map = {
+        1: item.recipe_approved,
+        2: item.sap_id,
+        3: item.pd_id,
+        4: item.customer,
+        5: item.market_segment,
+        6: item.application,
+        7: item.smms,
+        8: item.mono_bico,
+        9: item.structure,
+        10: item.bico_ratio_desc,
+        11: item.main_raw_mat,
+        12: item.treatment,
+        13: item.color,
+        14: item.bonding,
+        15: item.customer_bw,
+        16: item.belt_bw,
+        17: item.mb_grams,
+        18: item.line,
+        19: item.country,
+        20: item.belt_speed,
+        21: item.siko_percent,
+        22: item.repro_percent,
+        23: item.max_usable_width,
+        24: item.usable_width,
+        25: item.edge_trim_percent,
+        26: item.web_loss_percent,
+        27: item.other_scrap_percent,
+        28: item.total_scrap_percent,
+        29: item.gross_yield_percent,
+        30: item.s_beams,
+        31: item.m_beams,
+        32: item.sb_throughput,
+        33: item.mb_throughput,
+        34: item.total_throughput,
+        35: item.production_time,
+        36: item.cores,
+        37: item.slit_width,
+        38: item.length_meters,
+        39: item.roll_diameter,
+        40: item.target_production,
+        41: item.target_unit,
+        42: item.overconsumption,
+        43: item.notes,
+        44: item.author,
+        45: item.updated_at || item.created_at
+      };
+
+      if (columnIndex === 0 || columnIndex === 46) {
+        return '';
+      }
+
+      const value = map[columnIndex];
+      return value === null || value === undefined ? '' : value;
+    }
+
+    function sortRowsData() {
+      if (recipeSortColumn === null || recipeSortColumn === 0 || recipeSortColumn === 46) {
+        return;
+      }
+
+      rows.sort((a, b) => {
+        const aVal = getRecipeSortValue(a, recipeSortColumn);
+        const bVal = getRecipeSortValue(b, recipeSortColumn);
+
+        let cmp = 0;
+        const aNum = Number(aVal);
+        const bNum = Number(bVal);
+        const bothNumeric = Number.isFinite(aNum) && Number.isFinite(bNum);
+
+        if (bothNumeric) {
+          cmp = aNum - bNum;
+        } else if (recipeSortColumn === 45) {
+          cmp = new Date(aVal).getTime() - new Date(bVal).getTime();
+        } else {
+          cmp = String(aVal).localeCompare(String(bVal), undefined, { sensitivity: 'base', numeric: true });
+        }
+
+        return recipeSortDirection === 'asc' ? cmp : -cmp;
+      });
+    }
+
+    function attachRecipeHeaderSort() {
+      const headerRow = document.querySelector('#recipesTable thead tr');
+      if (!headerRow) return;
+
+      const headers = headerRow.querySelectorAll('th');
+      headers.forEach((th, idx) => {
+        const clone = th.cloneNode(true);
+        const text = clone.textContent.replace(/\s*[▲▼]\s*$/g, '').trim();
+        const sortable = idx !== 0 && idx !== 46;
+
+        clone.textContent = text;
+        clone.classList.remove('sortable-header', 'sorted-asc', 'sorted-desc');
+
+        if (sortable) {
+          clone.classList.add('sortable-header');
+          clone.title = 'Click to sort';
+          if (idx === recipeSortColumn) {
+            clone.classList.add(recipeSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+            clone.title = recipeSortDirection === 'asc'
+              ? 'Sorted ascending. Click to sort descending.'
+              : 'Sorted descending. Click to sort ascending.';
+          }
+        } else {
+          clone.title = '';
+        }
+
+        th.parentNode.replaceChild(clone, th);
+
+        if (!sortable) return;
+
+        clone.addEventListener('click', () => {
+          if (recipeSortColumn === idx) {
+            recipeSortDirection = recipeSortDirection === 'asc' ? 'desc' : 'asc';
+          } else {
+            recipeSortColumn = idx;
+            recipeSortDirection = 'asc';
+          }
+          renderRows();
+        });
+      });
+    }
+
     function renderRows() {
       const body = document.getElementById('recipesBody');
+      sortRowsData();
+
       if (!rows.length) {
         body.innerHTML = `<tr><td colspan="47" style="text-align:center;color:#6b8198;">No recipes found.</td></tr>`;
+        attachRecipeHeaderSort();
         return;
       }
 
@@ -657,6 +813,8 @@
           </tr>
         `;
       }).join('');
+
+      attachRecipeHeaderSort();
     }
 
     async function loadRows() {

@@ -9,6 +9,12 @@ function requiredEnv(name) {
   return value;
 }
 
+function getEmailVisualSpacerLines(count = 4) {
+  // Trailing truly empty lines can be trimmed by mail systems.
+  // NBSP lines render as visually blank separators.
+  return Array.from({ length: count }, () => '\u00A0');
+}
+
 async function sendReminderEmail(dueRows, dateIso) {
   const host = requiredEnv('SMTP_HOST');
   const port = Number(process.env.SMTP_PORT || 587);
@@ -30,7 +36,8 @@ async function sendReminderEmail(dueRows, dateIso) {
     'The following indexes are due for weekly value entry:',
     ...dueRows.map((row, i) => `${i + 1}. ${row.name} | last value date: ${row.latest_value_date || 'none'}`),
     '',
-    'Open the app: /polymer-indexes'
+    'Open the app: /polymer-indexes',
+    ...getEmailVisualSpacerLines(4)
   ].join('\n');
 
   await transporter.sendMail({
