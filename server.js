@@ -2324,6 +2324,10 @@ app.post("/api/admin/groups", auth.authMiddleware, auth.requirePermission('user:
   try {
     const { name, description, permissions } = req.body;
     const group = await auth.createGroup(name, description, permissions);
+    await auth.auditLog(req.user.id, 'GROUP_CREATED', 'groups', {
+      groupId: group.id,
+      groupName: group.name
+    });
     res.status(201).json({
       success: true,
       message: 'Group created successfully.',
@@ -2345,6 +2349,13 @@ app.put("/api/admin/groups/:id", auth.authMiddleware, auth.requirePermission('us
       description,
       hasPermissionsPayload ? permissions : null
     );
+
+    await auth.auditLog(req.user.id, 'GROUP_UPDATED', 'groups', {
+      groupId: group.id,
+      groupName: group.name,
+      permissionsUpdated: hasPermissionsPayload
+    });
+
     res.json({
       success: true,
       message: 'Group updated successfully.',
@@ -2395,6 +2406,11 @@ app.put("/api/admin/groups/:id/access-permissions", auth.authMiddleware, auth.re
       mergedPermissions
     );
 
+    await auth.auditLog(req.user.id, 'GROUP_ACCESS_PERMISSIONS_UPDATED', 'groups', {
+      groupId: updatedGroup.id,
+      groupName: updatedGroup.name
+    });
+
     res.json({
       success: true,
       message: "Access permissions updated successfully.",
@@ -2408,7 +2424,16 @@ app.put("/api/admin/groups/:id/access-permissions", auth.authMiddleware, auth.re
 // Delete group (admin only)
 app.delete("/api/admin/groups/:id", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
   try {
+    const groupId = req.params.id;
+    const groups = await auth.getGroups();
+    const group = groups.find((item) => String(item.id) === String(groupId));
     const result = await auth.deleteGroup(req.params.id);
+
+    await auth.auditLog(req.user.id, 'GROUP_DELETED', 'groups', {
+      groupId,
+      groupName: group ? group.name : null
+    });
+
     res.json({
       success: true,
       message: 'Group deleted successfully.',
@@ -2444,6 +2469,14 @@ app.post("/api/admin/users", auth.authMiddleware, auth.requirePermission('user:m
   try {
     const { email, fullName, password, groupId } = req.body;
     const user = await auth.createDirectUser(email, fullName, password, groupId);
+
+    await auth.auditLog(req.user.id, 'USER_CREATED_BY_ADMIN', 'users', {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      groupId: user.groupId || null
+    });
+
     res.status(201).json({
       success: true,
       message: 'User created successfully.',
@@ -2458,7 +2491,16 @@ app.post("/api/admin/users", auth.authMiddleware, auth.requirePermission('user:m
 app.put("/api/admin/users/:userId", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
   try {
     const { email, fullName, password } = req.body;
+    const targetUserId = req.params.userId;
     const user = await auth.updateUser(req.params.userId, email, fullName, password);
+
+    await auth.auditLog(req.user.id, 'USER_UPDATED_BY_ADMIN', 'users', {
+      userId: targetUserId,
+      email: user.email,
+      name: user.name,
+      passwordUpdated: !!password
+    });
+
     res.json({
       success: true,
       message: 'User updated successfully.',
@@ -2472,7 +2514,23 @@ app.put("/api/admin/users/:userId", auth.authMiddleware, auth.requirePermission(
 // Remove user from group (admin only)
 app.delete("/api/admin/users/:userId/groups/:groupId", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
   try {
-    const result = await auth.removeUserFromGroup(req.params.userId, req.params.groupId);
+    const userId = req.params.userId;
+    const groupId = req.params.groupId;
+    const [user, groups] = await Promise.all([
+      auth.getCurrentUser(userId).catch(() => null),
+      auth.getGroups().catch(() => [])
+    ]);
+    const group = (groups || []).find((item) => String(item.id) === String(groupId));
+
+    const result = await auth.removeUserFromGroup(userId, groupId);
+
+    await auth.auditLog(req.user.id, 'USER_REMOVED_FROM_GROUP', 'users', {
+      userId,
+      userEmail: user ? user.email : null,
+      groupId,
+      groupName: group ? group.name : null
+    });
+
     res.json({
       success: true,
       message: 'User removed from group successfully.',
@@ -2480,6 +2538,33 @@ app.delete("/api/admin/users/:userId/groups/:groupId", auth.authMiddleware, auth
     });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Delete user (admin only)
+app.delete('/api/admin/users/:userId', auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const targetUserId = req.params.userId;
+    if (String(targetUserId) === String(req.user.id)) {
+      return res.status(400).json({ success: false, error: 'You cannot delete your own account.' });
+    }
+
+    const result = await auth.deleteUser(targetUserId);
+
+    await auth.auditLog(req.user.id, 'USER_DELETED_BY_ADMIN', 'users', {
+      userId: result.id,
+      email: result.email,
+      name: result.name,
+      role: result.role
+    });
+
+    return res.json({
+      success: true,
+      message: 'User deleted successfully.',
+      result
+    });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 

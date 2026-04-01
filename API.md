@@ -138,6 +138,7 @@ Base URL:
 - `GET /api/admin/users`
 - `POST /api/admin/users`
 - `PUT /api/admin/users/:userId`
+- `DELETE /api/admin/users/:userId`
 - `DELETE /api/admin/users/:userId/groups/:groupId`
 - `GET /api/admin/audit-logs`
 - `GET /api/admin/audit-logs/stats`

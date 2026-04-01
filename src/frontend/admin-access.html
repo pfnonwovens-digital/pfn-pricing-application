@@ -1799,6 +1799,7 @@
                             <div class="user-actions">
                                 <button class="btn-edit-user" onclick="openEditUserModal('${user.id}', '${user.name}', '${user.email}')">✏️ Edit</button>
                                 <button class="btn-remove-user" onclick="removeUserFromGroup('${user.id}', '${groupId}')">Remove</button>
+                                <button class="btn-remove-user" onclick="deleteUser('${user.id}', '${escapeHtml(userDisplay)}')">Delete User</button>
                             </div>
                         </div>
                     `;
@@ -2148,6 +2149,32 @@
                     loadGroups();
                 } else {
                     showAlert('alertError', '❌ ' + data.error, 'error');
+                }
+            } catch (err) {
+                showAlert('alertError', '❌ Error: ' + err.message, 'error');
+            }
+        }
+
+        async function deleteUser(userId, userDisplay) {
+            if (!confirm(`Are you sure you want to permanently delete user ${userDisplay}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/users/${userId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok) {
+                    showAlert('alertSuccess', '✅ User deleted successfully');
+                    loadGroups();
+                } else {
+                    showAlert('alertError', '❌ ' + (data.error || 'Failed to delete user'), 'error');
                 }
             } catch (err) {
                 showAlert('alertError', '❌ Error: ' + err.message, 'error');

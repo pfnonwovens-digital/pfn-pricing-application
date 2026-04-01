@@ -40,6 +40,7 @@ Test credentials (created by setup script):
 - Admin Access Management panel now includes a per-page Access Permissions matrix for groups (Read/Modify)
 - Access Request submission sends email notifications to active admins (using configured SMTP transport)
 - Shared page header displays pending Access Request count as a badge on the Admin button
+- Admin user management supports permanent user deletion from Admin Access (with self-delete protection)
 - Access Permissions matrix supports row Save, Save All for changed groups, explanatory tooltips, and visual highlighting of unsaved changes
 - Admin Access Management includes a Recipe Approval Region matrix (`CZ`, `EG`, `RSA`) to assign users from Admin + Recipe Approvals groups; one user can be assigned to multiple regions
 - Per-user effective page permissions are exposed from backend and consumed by admin-sensitive pages (FX rates, polymer pages)
@@ -67,6 +68,7 @@ Test credentials (created by setup script):
 - Recipe Approval pending list shows `PD ID` as the first table column (`PD ID`, `Customer`, `Line`, `Author`, `Status`, `Updated`)
 - Recipe Edit/Clone includes Created and Updated timestamps in the grid and an Admin-only Delete action
 - Audit Logs detail rendering now includes `PD ID` plus record context (`Record`, `Source`, `New`, `Action`, `Decision`) for BOM/approval actions
+- Audit Logs now include full admin user/group mutation actions (group create/update/delete, access-permissions update, user create/update/delete, remove user from group)
 - Raw Material Price Management by plant (CZ, EG, ZA): monthly sheets, missing/fallback statuses, inline edits, and JSON import
 - Roll Raw Material Prices copies values visible in Source (including fallback-origin prices) and refreshes Target preview after successful copy
 - Remove Prices page (`/rm-prices/remove`) supports deleting exact monthly prices by period filter (plant/year/month/category), individually or in bulk

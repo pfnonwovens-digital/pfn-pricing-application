@@ -6,6 +6,20 @@ All notable changes to the Mini ERP system are documented here. For current feat
 
 ### Added
 
+#### Admin Users — delete endpoint and full admin mutation audit coverage
+- Added `DELETE /api/admin/users/:userId` endpoint for permanent user deletion (admin only)
+- Added self-delete protection for admins (`You cannot delete your own account.`)
+- Admin Access UI group user list now includes **Delete User** action
+- Expanded audit logging coverage for admin user/group management mutations:
+  - `GROUP_CREATED`
+  - `GROUP_UPDATED`
+  - `GROUP_ACCESS_PERMISSIONS_UPDATED`
+  - `GROUP_DELETED`
+  - `USER_CREATED_BY_ADMIN`
+  - `USER_UPDATED_BY_ADMIN`
+  - `USER_REMOVED_FROM_GROUP`
+  - `USER_DELETED_BY_ADMIN`
+
 #### RM Prices — Remove Prices page `/rm-prices/remove`
 - Added new frontend page for controlled deletion of exact monthly RM prices by filter: Plant + Year + Month + optional Category
 - Added row-level delete action (single record)
