@@ -28,6 +28,10 @@ All notable changes to the Mini ERP system are documented here. For current feat
   — `values` array contains 12 entries corresponding to beam columns 1A, 1B, 2A, 2B, 3, 4, 5, 6, 7A, 7B, 8A, 8B
 - `normalizeBeamConfigurationSnapshot()` server helper extended to sanitize and persist the `rows` array alongside scalar beam fields; empty-row filtering prevents blank rows from being stored
 - Non-beam recipes (legacy records without `has_beam_configuration`) continue to open in the existing Recipe Edit/Clone modal without change
+- In the non-beam Recipe Edit/Clone modal, `Siko %` and `Repro %` are now bi-directionally synchronized with BOM Materials percentages for labels `Recyclate` and `Regranulate`:
+  - Editing Siko/Repro in the detail form updates the corresponding BOM material percentage row
+  - Editing the `Recyclate`/`Regranulate` percentage row updates Siko/Repro in the detail form
+  - Initial modal prefill aligns BOM material rows with the detail form values to avoid inconsistencies
 
 #### Beam Configuration Persistence and Recipe Edit/Clone Panel
 - Beam Configuration inputs (beam GSM 1–8, BICO B ratios for beams 1/2/7/8, overconsumption %) from BOM Calculator are now persisted to the database when saving a new recipe

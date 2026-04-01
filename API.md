@@ -339,6 +339,10 @@ Response shape:
 - Saving in Edit mode issues `PUT /api/bom/records/:id`; saving in Copy mode issues `POST /api/bom/records` with `sourceRecordId`
 - After successful save in either mode, browser redirects to `/recipe-edit-clone`
 - Non-beam recipes continue to use the existing Recipe Edit/Clone modal (no change)
+- In the non-beam Recipe Edit/Clone modal, values are synchronized between detail fields and BOM rows:
+  - `Siko %` ↔ BOM material row with label `Recyclate`
+  - `Repro %` ↔ BOM material row with label `Regranulate`
+  - Synchronization is bi-directional during editing and applied on modal prefill
 
 - `DELETE /api/bom/records/:id`
   - Deletes the BOM record and its child `bom_record_materials` rows in a transaction

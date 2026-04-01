@@ -1139,6 +1139,8 @@
       setSelectValues('ed_bonding', desc.bonding || editor.bondings || []);
       setSelectValues('ed_line', editor.lineIds || []);
       setSelectValues('ed_target_unit', editor.targetUnits || ['tons', 'kg']);
+
+      bindSikoReproSynchronization();
     }
 
     function getEditorValue(id) {
@@ -1226,6 +1228,65 @@
       return normalized === 'surfactant' || normalized === 'surfactants';
     }
 
+    function getSikoReproTypeFromLabel(label) {
+      const normalized = String(label || '').trim().toLowerCase();
+      if (normalized === 'recyclate') return 'siko';
+      if (normalized === 'regranulate') return 'repro';
+      return null;
+    }
+
+    function getSikoReproDetailFieldId(type) {
+      return type === 'siko' ? 'ed_siko_percent' : 'ed_repro_percent';
+    }
+
+    function findMaterialRowByType(type) {
+      const rowsEls = Array.from(document.querySelectorAll('#materialsBody .material-row'));
+      return rowsEls.find((row) => {
+        const label = row.querySelector('.mat-label')?.value || '';
+        return getSikoReproTypeFromLabel(label) === type;
+      }) || null;
+    }
+
+    function setDetailPercentFromMaterialType(type) {
+      const fieldId = getSikoReproDetailFieldId(type);
+      const detailInput = document.getElementById(fieldId);
+      if (!detailInput) return;
+      const row = findMaterialRowByType(type);
+      if (!row) return;
+      const pctInput = row.querySelector('.mat-pct');
+      if (!pctInput) return;
+      detailInput.value = formatDecimalForInput(pctInput.value, 2);
+    }
+
+    function setMaterialPercentFromDetailType(type) {
+      const fieldId = getSikoReproDetailFieldId(type);
+      const detailInput = document.getElementById(fieldId);
+      if (!detailInput) return;
+      const row = findMaterialRowByType(type);
+      if (!row) return;
+      const pctInput = row.querySelector('.mat-pct');
+      if (!pctInput) return;
+      pctInput.value = formatDecimalForInput(detailInput.value, 2);
+      updateMaterialsTotal();
+    }
+
+    function bindSikoReproSynchronization() {
+      const sikoInput = document.getElementById('ed_siko_percent');
+      const reproInput = document.getElementById('ed_repro_percent');
+      if (sikoInput) {
+        sikoInput.addEventListener('input', () => setMaterialPercentFromDetailType('siko'));
+      }
+      if (reproInput) {
+        reproInput.addEventListener('input', () => setMaterialPercentFromDetailType('repro'));
+      }
+    }
+
+    function synchronizeSikoReproFromDetail() {
+      // Keep BOM material percentages aligned with detail Siko/Repro fields on initial load.
+      setMaterialPercentFromDetailType('siko');
+      setMaterialPercentFromDetailType('repro');
+    }
+
     function addMaterialRow(material = {}) {
       const body = document.getElementById('materialsBody');
       const row = document.createElement('tr');
@@ -1243,10 +1304,21 @@
 
       const pctInput = row.querySelector('.mat-pct');
       pctInput.value = formatDecimalForInput(material.percentage, 2);
-      pctInput.addEventListener('input', updateMaterialsTotal);
+      pctInput.addEventListener('input', () => {
+        updateMaterialsTotal();
+        const syncType = getSikoReproTypeFromLabel(labelSelect.value);
+        if (syncType) {
+          setDetailPercentFromMaterialType(syncType);
+        }
+      });
 
       labelSelect.addEventListener('change', () => {
         renderMaterialNameControl(row, labelSelect.value, '');
+        const syncType = getSikoReproTypeFromLabel(labelSelect.value);
+        if (syncType) {
+          setMaterialPercentFromDetailType(syncType);
+          setDetailPercentFromMaterialType(syncType);
+        }
       });
 
       row.querySelector('.mat-remove').addEventListener('click', () => {
@@ -1355,6 +1427,8 @@
       } else {
         materials.forEach((m) => addMaterialRow(m));
       }
+
+      synchronizeSikoReproFromDetail();
 
       const pdInput = document.getElementById('ed_pd_id');
       if (editorMode === 'edit' && originalPdId) {
