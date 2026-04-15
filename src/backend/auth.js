@@ -629,7 +629,7 @@ async function getAdminNotificationEmails() {
     .filter(Boolean);
 }
 
-async function approveAccessRequest(requestId, adminUserId) {
+async function approveAccessRequest(requestId, adminUserId, groupId = null) {
   const request = await dbGet('SELECT * FROM access_requests WHERE id = ?', [requestId]);
 
   if (!request) {
@@ -651,7 +651,27 @@ async function approveAccessRequest(requestId, adminUserId) {
 
   const createdUser = await dbGet('SELECT id FROM users WHERE email = ?', [request.email]);
 
-  await ensureUserHasDefaultGroup(createdUser.id);
+  let assignedGroupId = null;
+  let assignedGroupName = DEFAULT_ACCESS_GROUP_NAME;
+
+  if (groupId) {
+    const selectedGroup = await dbGet('SELECT id, name FROM groups WHERE id = ?', [groupId]);
+    if (!selectedGroup) {
+      throw new Error('Selected group not found');
+    }
+
+    await dbRun(
+      'INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)',
+      [createdUser.id, selectedGroup.id]
+    );
+
+    assignedGroupId = selectedGroup.id;
+    assignedGroupName = selectedGroup.name;
+  } else {
+    const defaultGroupId = await ensureDefaultAccessGroup();
+    await ensureUserHasDefaultGroup(createdUser.id);
+    assignedGroupId = defaultGroupId;
+  }
 
   // Update request status
   await dbRun(
@@ -661,13 +681,17 @@ async function approveAccessRequest(requestId, adminUserId) {
 
   await auditLog(adminUserId, 'ACCESS_REQUEST_APPROVED', 'access', {
     email: request.email,
-    userId: createdUser.id
+    userId: createdUser.id,
+    groupId: assignedGroupId,
+    groupName: assignedGroupName
   });
 
   return {
     userId: createdUser.id,
     email: request.email,
     name: request.full_name,
+    groupId: assignedGroupId,
+    groupName: assignedGroupName,
     tempPassword,
     message: 'User account created. Please share temporary password securely.'
   };
@@ -786,6 +810,84 @@ async function removeUserFromGroup(userId, groupId) {
   );
 
   return { userId, groupId, status: 'removed' };
+}
+
+async function moveUserToGroup(userId, fromGroupId, toGroupId) {
+  if (!fromGroupId || !toGroupId) {
+    throw new Error('Both fromGroupId and toGroupId are required');
+  }
+
+  if (String(fromGroupId) === String(toGroupId)) {
+    throw new Error('Source and target groups must be different');
+  }
+
+  const user = await dbGet('SELECT id FROM users WHERE id = ?', [userId]);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  const [fromGroup, toGroup] = await Promise.all([
+    dbGet('SELECT id, name FROM groups WHERE id = ?', [fromGroupId]),
+    dbGet('SELECT id, name FROM groups WHERE id = ?', [toGroupId])
+  ]);
+
+  if (!fromGroup) {
+    throw new Error('Source group not found');
+  }
+  if (!toGroup) {
+    throw new Error('Target group not found');
+  }
+
+  await dbRun('BEGIN TRANSACTION');
+  try {
+    const sourceMembership = await dbGet(
+      'SELECT id FROM user_groups WHERE user_id = ? AND group_id = ?',
+      [userId, fromGroupId]
+    );
+    if (!sourceMembership) {
+      throw new Error('User is not a member of the source group');
+    }
+
+    const targetMembership = await dbGet(
+      'SELECT id FROM user_groups WHERE user_id = ? AND group_id = ?',
+      [userId, toGroupId]
+    );
+
+    if (!targetMembership) {
+      await dbRun(
+        'INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)',
+        [userId, toGroupId]
+      );
+    }
+
+    await dbRun(
+      'DELETE FROM user_groups WHERE user_id = ? AND group_id = ?',
+      [userId, fromGroupId]
+    );
+
+    const remainingMemberships = await dbGet(
+      'SELECT COUNT(1) AS cnt FROM user_groups WHERE user_id = ?',
+      [userId]
+    );
+
+    if (!remainingMemberships || Number(remainingMemberships.cnt) < 1) {
+      throw new Error('User must belong to at least one group');
+    }
+
+    await dbRun('COMMIT');
+
+    return {
+      userId,
+      fromGroupId,
+      toGroupId,
+      fromGroupName: fromGroup.name,
+      toGroupName: toGroup.name,
+      status: targetMembership ? 'removed_from_source_target_already_assigned' : 'moved'
+    };
+  } catch (err) {
+    await dbRun('ROLLBACK');
+    throw err;
+  }
 }
 
 async function getUserGroups(userId) {
@@ -1198,6 +1300,7 @@ module.exports = {
   getGroups,
   addUserToGroup,
   removeUserFromGroup,
+  moveUserToGroup,
   getUserGroups,
   updateGroup,
   deleteGroup,

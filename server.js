@@ -2361,7 +2361,8 @@ app.get('/api/admin/access-requests/pending-count', auth.authMiddleware, async (
 // Approve access request (admin only)
 app.post("/api/admin/access-requests/:id/approve", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
   try {
-    const result = await auth.approveAccessRequest(req.params.id, req.user.id);
+    const { groupId } = req.body || {};
+    const result = await auth.approveAccessRequest(req.params.id, req.user.id, groupId || null);
     res.json({
       success: true,
       message: 'Access request approved. User account created.',
@@ -2632,6 +2633,45 @@ app.delete("/api/admin/users/:userId/groups/:groupId", auth.authMiddleware, auth
     });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Move user from one group to another (admin only)
+app.post('/api/admin/users/:userId/move-group', auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const { fromGroupId, toGroupId } = req.body || {};
+
+    if (!fromGroupId || !toGroupId) {
+      return res.status(400).json({ success: false, error: 'fromGroupId and toGroupId are required' });
+    }
+
+    const [user, groups] = await Promise.all([
+      auth.getCurrentUser(userId).catch(() => null),
+      auth.getGroups().catch(() => [])
+    ]);
+
+    const sourceGroup = (groups || []).find((item) => String(item.id) === String(fromGroupId));
+    const targetGroup = (groups || []).find((item) => String(item.id) === String(toGroupId));
+
+    const result = await auth.moveUserToGroup(userId, fromGroupId, toGroupId);
+
+    await auth.auditLog(req.user.id, 'USER_MOVED_BETWEEN_GROUPS', 'users', {
+      userId,
+      userEmail: user ? user.email : null,
+      fromGroupId,
+      fromGroupName: sourceGroup ? sourceGroup.name : null,
+      toGroupId,
+      toGroupName: targetGroup ? targetGroup.name : null
+    });
+
+    return res.json({
+      success: true,
+      message: 'User moved between groups successfully.',
+      result
+    });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 

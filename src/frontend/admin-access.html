@@ -477,6 +477,17 @@
             background-color: #e68900;
         }
 
+        .btn-move-user {
+            background-color: #8e44ad;
+            color: white;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-move-user:hover {
+            background-color: #73368d;
+        }
+
         .btn-add-user {
             background-color: #4CAF50;
             color: white;
@@ -860,6 +871,27 @@
         </div>
     </div>
 
+    <!-- Approve Request Modal -->
+    <div id="approveModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Approve Access Request</h2>
+            </div>
+            <div class="modal-body">
+                <p>Choose a group for the new user account.</p>
+                <div class="form-group">
+                    <label for="approveGroupSelect">Assign to Group</label>
+                    <select id="approveGroupSelect"></select>
+                </div>
+                <small style="color:#666;">Default is General Access if available.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel" onclick="closeApproveModal()">Cancel</button>
+                <button type="button" class="btn-approve" onclick="confirmApproveRequest()">Approve</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Create Group Modal -->
     <div id="createGroupModal" class="modal">
         <div class="modal-content">
@@ -967,10 +999,33 @@
         </div>
     </div>
 
+    <!-- Move User Modal -->
+    <div id="moveUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Move User To Another Group</h2>
+            </div>
+            <div class="modal-body">
+                <p id="moveUserLabel" style="margin-top:0;"></p>
+                <div class="form-group">
+                    <label for="moveUserTargetGroup">Target Group</label>
+                    <select id="moveUserTargetGroup"></select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-cancel" onclick="closeMoveUserModal()">Cancel</button>
+                <button type="button" class="btn-primary" onclick="confirmMoveUser()">Move User</button>
+            </div>
+        </div>
+    </div>
+
 
     <script src="/auth.js"></script>
     <script>
         let currentDenyRequestId = null;
+        let currentApproveRequestId = null;
+        let currentMoveUserId = null;
+        let currentMoveFromGroupId = null;
         const token = localStorage.getItem('authToken');
         let accessPermissionPages = [];
         let accessPermissionMatrix = [];
@@ -1136,7 +1191,7 @@
 
                     if (req.status === 'pending') {
                         html += `
-                            <button class="btn-approve" onclick="approveRequest('${req.id}')">Approve</button>
+                            <button class="btn-approve" onclick="showApproveModal('${req.id}')">Approve</button>
                             <button class="btn-deny" onclick="showDenyModal('${req.id}')">Deny</button>
                         `;
                     } else if (req.status === 'denied') {
@@ -1164,24 +1219,118 @@
             }
         }
 
-        async function approveRequest(requestId) {
-            if (!confirm('Are you sure you want to approve this request?')) {
+        async function populateGroupSelect(selectId, options = {}) {
+            const {
+                includeEmpty = false,
+                emptyLabel = '-- Select Group --',
+                excludeGroupId = null,
+                defaultGroupName = 'General Access'
+            } = options;
+
+            const response = await fetch('/api/admin/groups', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            const groups = await response.json();
+            if (!response.ok) {
+                throw new Error((groups && groups.error) || 'Failed to load groups');
+            }
+
+            const select = document.getElementById(selectId);
+            if (!select) {
+                throw new Error('Group selector not found');
+            }
+
+            const filteredGroups = (Array.isArray(groups) ? groups : [])
+                .filter(group => !excludeGroupId || String(group.id) !== String(excludeGroupId));
+
+            select.innerHTML = '';
+            if (includeEmpty) {
+                const emptyOption = document.createElement('option');
+                emptyOption.value = '';
+                emptyOption.textContent = emptyLabel;
+                select.appendChild(emptyOption);
+            }
+
+            filteredGroups.forEach(group => {
+                const option = document.createElement('option');
+                option.value = String(group.id);
+                option.textContent = group.name;
+                select.appendChild(option);
+            });
+
+            const defaultGroup = filteredGroups.find(group => String(group.name || '').toLowerCase() === String(defaultGroupName).toLowerCase());
+            if (defaultGroup) {
+                select.value = String(defaultGroup.id);
+            } else if (filteredGroups.length > 0) {
+                select.value = String(filteredGroups[0].id);
+            }
+
+            return filteredGroups;
+        }
+
+        async function showApproveModal(requestId) {
+            currentApproveRequestId = requestId;
+
+            try {
+                const groups = await populateGroupSelect('approveGroupSelect', {
+                    includeEmpty: false,
+                    defaultGroupName: 'General Access'
+                });
+
+                if (!groups.length) {
+                    showAlert('alertError', '❌ No groups found. Create at least one group before approving requests.', 'error');
+                    currentApproveRequestId = null;
+                    return;
+                }
+
+                document.getElementById('approveModal').classList.add('active');
+            } catch (err) {
+                currentApproveRequestId = null;
+                showAlert('alertError', '❌ Error: ' + err.message, 'error');
+            }
+        }
+
+        function closeApproveModal() {
+            document.getElementById('approveModal').classList.remove('active');
+            currentApproveRequestId = null;
+            const select = document.getElementById('approveGroupSelect');
+            if (select) {
+                select.innerHTML = '';
+            }
+        }
+
+        async function confirmApproveRequest() {
+            if (!currentApproveRequestId) {
+                showAlert('alertError', '❌ No request selected', 'error');
+                return;
+            }
+
+            const groupSelect = document.getElementById('approveGroupSelect');
+            const selectedGroupId = String(groupSelect?.value || '').trim();
+
+            if (!selectedGroupId) {
+                showAlert('alertError', '❌ Please select a target group', 'error');
                 return;
             }
 
             try {
-                const response = await fetch(`/api/admin/access-requests/${requestId}/approve`, {
+                const response = await fetch(`/api/admin/access-requests/${currentApproveRequestId}/approve`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({ groupId: selectedGroupId })
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
                     showAlert('alertSuccess', `✅ Request approved! Temporary password: ${data.data.tempPassword}`);
+                    closeApproveModal();
                     loadAccessRequests();
                 } else {
                     showAlert('alertError', '❌ ' + data.error, 'error');
@@ -1799,6 +1948,7 @@
                             <div class="user-actions">
                                 <button class="btn-edit-user" onclick="openEditUserModal('${user.id}', '${user.name}', '${user.email}')">✏️ Edit</button>
                                 <button class="btn-remove-user" onclick="removeUserFromGroup('${user.id}', '${groupId}')">Remove</button>
+                                <button class="btn-move-user" onclick="openMoveUserModal('${user.id}', '${groupId}', '${encodeURIComponent(userDisplay)}')">Move</button>
                                 <button class="btn-remove-user" onclick="deleteUser('${user.id}', '${escapeHtml(userDisplay)}')">Delete User</button>
                             </div>
                         </div>
@@ -2150,6 +2300,90 @@
                 } else {
                     showAlert('alertError', '❌ ' + data.error, 'error');
                 }
+            } catch (err) {
+                showAlert('alertError', '❌ Error: ' + err.message, 'error');
+            }
+        }
+
+        async function openMoveUserModal(userId, fromGroupId, encodedUserDisplay) {
+            currentMoveUserId = userId;
+            currentMoveFromGroupId = fromGroupId;
+
+            const label = document.getElementById('moveUserLabel');
+            if (label) {
+                const userDisplay = decodeURIComponent(encodedUserDisplay || '');
+                label.textContent = `Move user: ${userDisplay}`;
+            }
+
+            try {
+                const groups = await populateGroupSelect('moveUserTargetGroup', {
+                    includeEmpty: false,
+                    excludeGroupId: fromGroupId,
+                    defaultGroupName: 'General Access'
+                });
+
+                if (!groups.length) {
+                    showAlert('alertError', '❌ No target groups available for move.', 'error');
+                    currentMoveUserId = null;
+                    currentMoveFromGroupId = null;
+                    return;
+                }
+
+                document.getElementById('moveUserModal').classList.add('active');
+            } catch (err) {
+                currentMoveUserId = null;
+                currentMoveFromGroupId = null;
+                showAlert('alertError', '❌ Error loading groups: ' + err.message, 'error');
+            }
+        }
+
+        function closeMoveUserModal() {
+            document.getElementById('moveUserModal').classList.remove('active');
+            currentMoveUserId = null;
+            currentMoveFromGroupId = null;
+            const select = document.getElementById('moveUserTargetGroup');
+            if (select) {
+                select.innerHTML = '';
+            }
+            const label = document.getElementById('moveUserLabel');
+            if (label) {
+                label.textContent = '';
+            }
+        }
+
+        async function confirmMoveUser() {
+            if (!currentMoveUserId || !currentMoveFromGroupId) {
+                showAlert('alertError', '❌ Move context missing', 'error');
+                return;
+            }
+
+            const toGroupId = String(document.getElementById('moveUserTargetGroup')?.value || '').trim();
+            if (!toGroupId) {
+                showAlert('alertError', '❌ Select a target group', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/users/${currentMoveUserId}/move-group`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        fromGroupId: currentMoveFromGroupId,
+                        toGroupId
+                    })
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || `Request failed (${response.status})`);
+                }
+
+                showAlert('alertSuccess', '✅ User moved successfully');
+                closeMoveUserModal();
+                loadGroups();
             } catch (err) {
                 showAlert('alertError', '❌ Error: ' + err.message, 'error');
             }

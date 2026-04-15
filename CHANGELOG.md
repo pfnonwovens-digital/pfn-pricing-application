@@ -6,6 +6,17 @@ All notable changes to the Mini ERP system are documented here. For current feat
 
 ### Added
 
+#### Admin Access Management - group assignment on approval and user group move
+- Access request approval now supports selecting a target group at approval time instead of always assigning only to default `General Access`
+- `POST /api/admin/access-requests/:id/approve` now accepts optional body `{ "groupId": "<group-id>" }`
+- If no `groupId` is provided, default behavior remains unchanged: user is assigned to `General Access`
+- Added new admin endpoint `POST /api/admin/users/:userId/move-group` with body `{ "fromGroupId", "toGroupId" }` for one-step user move between groups
+- Move operation is executed transactionally to avoid accidental no-group state
+- Admin Access UI updates:
+  - Access request **Approve** now opens a modal with group selector (defaulting to `General Access`)
+  - Group user cards now include **Move** action for moving a user to another group
+- Added audit log event `USER_MOVED_BETWEEN_GROUPS`; access-request approval audit now also stores assigned group details
+
 #### Full Beam Matrix Edit/Copy via BOM Calculator
 - Beam recipes (records with `has_beam_configuration = 1`) opened in Edit or Copy mode from **Recipe Edit/Clone** now open directly in the **BOM Calculator** page in a new tab, with all data pre-filled, instead of the previous limited modal panel
 - URL parameter scheme: `/bom-calculator?editId=N` for edit mode, `/bom-calculator?copyId=N` for copy mode

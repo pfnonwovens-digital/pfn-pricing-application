@@ -46,6 +46,15 @@ Base URL:
 - `GET /api/admin/access-requests`
 - `GET /api/admin/access-requests/pending-count`
 - `POST /api/admin/access-requests/:id/approve`
+  - Optional request body supports assigning the newly approved user to a specific group:
+
+```json
+{
+  "groupId": "<group-id>"
+}
+```
+
+  - If `groupId` is omitted, user is assigned to default `General Access` group.
 - `POST /api/admin/access-requests/:id/deny`
 - `DELETE /api/admin/access-requests/:id` (allowed only for requests with `status = denied`)
 
@@ -140,6 +149,16 @@ Base URL:
 - `PUT /api/admin/users/:userId`
 - `DELETE /api/admin/users/:userId`
 - `DELETE /api/admin/users/:userId/groups/:groupId`
+- `POST /api/admin/users/:userId/move-group`
+  - Moves a user from one group to another in a single operation.
+  - Request body:
+
+```json
+{
+  "fromGroupId": "<source-group-id>",
+  "toGroupId": "<target-group-id>"
+}
+```
 - `GET /api/admin/audit-logs`
 - `GET /api/admin/audit-logs/stats`
 - `GET /api/admin/db-download`
