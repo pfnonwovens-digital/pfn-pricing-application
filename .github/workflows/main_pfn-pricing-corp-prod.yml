@@ -7,125 +7,59 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - '**/*.md'
-      - '.gitignore'
   workflow_dispatch:
-
-concurrency:
-  group: azure-deploy-pfn-pricing-corp-prod
-  cancel-in-progress: true
-
-env:
-  AZURE_WEBAPP_NAME: pfn-pricing-corp-prod
-  NODE_VERSION: '22.x'
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: windows-latest
     permissions:
-      contents: read
+      contents: read #This is required for actions/checkout
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js version
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '22.x'
 
-      - name: Show build context
+      - name: npm install, build, and test
         run: |
-          set -euo pipefail
-          echo "Commit: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref_name }}"
-          node --version
-          if command -v npm >/dev/null 2>&1; then
-            npm --version || echo "npm version check failed; continuing"
-          else
-            echo "npm not found on runner PATH; continuing"
-          fi
-
-      - name: Validate required project files
-        run: |
-          set -euo pipefail
-          test -f package.json
-          test -f server.js
-          test -d src
-          node --check server.js
-
-      - name: Prepare deployment package
-        run: |
-          set -euo pipefail
-          mkdir -p deploy
-          rsync -a ./ deploy/ \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude 'deploy' \
-            --exclude 'node_modules' \
-            --exclude '*.log' \
-            --exclude 'server-output.txt' \
-            --exclude 'azure-deployment-info.txt' \
-            --exclude 'npm-install-output.log'
-          test -f deploy/package.json
-          test -f deploy/server.js
-
+          npm install
+          npm run build --if-present
+          npm run test --if-present
+      
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: deploy
+          path: .
 
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     needs: build
     permissions:
-      id-token: write
-      contents: read
+      id-token: write #This is required for requesting the JWT
+      contents: read #This is required for actions/checkout
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: node-app
-          path: deploy
-
+      
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_0066FE629C374592944DC0ED84B94752 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_4C89D355FFBB4BCD8B6E2201E3F589D0 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_A6FEE625C61B44A3B2BC9DFBFF3C8D8F }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_F09EDE5F24954971BEA2914D8766B7E5 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_00AE0FDE65AE4F819AFE382DDCC9C5E4 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_FA97227313AC4D47BA9E009F64F80538 }}
 
-      - name: Deploy to Azure Web App
+      - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          slot-name: Production
-          package: deploy
-
-      - name: Health check
-        continue-on-error: true
-        run: |
-          echo "Health check started (non-blocking)"
-          WEBAPP_URL="${{ steps.deploy-to-webapp.outputs.webapp-url }}"
-          if [ -z "$WEBAPP_URL" ]; then
-            echo "No web app URL returned by deploy step"
-            exit 0
-          fi
-          echo "Checking health at: ${WEBAPP_URL}/api/health"
-          for attempt in {1..10}; do
-            code=$(curl -s -o /tmp/health.json -w "%{http_code}" "${WEBAPP_URL}/api/health" || true)
-            if [ "$code" = "200" ]; then
-              echo "Health check passed"
-              cat /tmp/health.json
-              exit 0
-            fi
-            echo "Health check attempt $attempt failed (HTTP $code), retrying in 15s..."
-            sleep 15
-          done
-          echo "Health check failed after deployment"
-          exit 0
+          app-name: 'pfn-pricing-corp-prod'
+          slot-name: 'Production'
+          package: .
+          
