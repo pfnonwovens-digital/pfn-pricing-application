@@ -47,6 +47,10 @@ jobs:
                "node_modules/*" \
                "backups/*" \
                ".github/*" \
+               ".deployment" \
+               "deploy.cmd" \
+               "startup.cmd" \
+               "oryx.build.json" \
                "*.log" \
                "npm-debug.log*"
       
