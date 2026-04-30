@@ -803,15 +803,6 @@ async function addUserToGroup(userId, groupId) {
   return { userId, groupId, status: 'added' };
 }
 
-async function removeUserFromGroup(userId, groupId) {
-  await dbRun(
-    'DELETE FROM user_groups WHERE user_id = ? AND group_id = ?',
-    [userId, groupId]
-  );
-
-  return { userId, groupId, status: 'removed' };
-}
-
 async function moveUserToGroup(userId, fromGroupId, toGroupId) {
   if (!fromGroupId || !toGroupId) {
     throw new Error('Both fromGroupId and toGroupId are required');
@@ -1299,7 +1290,6 @@ module.exports = {
   createGroup,
   getGroups,
   addUserToGroup,
-  removeUserFromGroup,
   moveUserToGroup,
   getUserGroups,
   updateGroup,

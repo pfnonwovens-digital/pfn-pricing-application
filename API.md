@@ -148,7 +148,6 @@ Base URL:
 - `POST /api/admin/users`
 - `PUT /api/admin/users/:userId`
 - `DELETE /api/admin/users/:userId`
-- `DELETE /api/admin/users/:userId/groups/:groupId`
 - `POST /api/admin/users/:userId/move-group`
   - Moves a user from one group to another in a single operation.
   - Request body:

@@ -2606,36 +2606,6 @@ app.put("/api/admin/users/:userId", auth.authMiddleware, auth.requirePermission(
   }
 });
 
-// Remove user from group (admin only)
-app.delete("/api/admin/users/:userId/groups/:groupId", auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const groupId = req.params.groupId;
-    const [user, groups] = await Promise.all([
-      auth.getCurrentUser(userId).catch(() => null),
-      auth.getGroups().catch(() => [])
-    ]);
-    const group = (groups || []).find((item) => String(item.id) === String(groupId));
-
-    const result = await auth.removeUserFromGroup(userId, groupId);
-
-    await auth.auditLog(req.user.id, 'USER_REMOVED_FROM_GROUP', 'users', {
-      userId,
-      userEmail: user ? user.email : null,
-      groupId,
-      groupName: group ? group.name : null
-    });
-
-    res.json({
-      success: true,
-      message: 'User removed from group successfully.',
-      result
-    });
-  } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
 // Move user from one group to another (admin only)
 app.post('/api/admin/users/:userId/move-group', auth.authMiddleware, auth.requirePermission('user:manage'), async (req, res) => {
   try {

@@ -1947,7 +1947,6 @@
                             </div>
                             <div class="user-actions">
                                 <button class="btn-edit-user" onclick="openEditUserModal('${user.id}', '${user.name}', '${user.email}')">✏️ Edit</button>
-                                <button class="btn-remove-user" onclick="removeUserFromGroup('${user.id}', '${groupId}')">Remove</button>
                                 <button class="btn-move-user" onclick="openMoveUserModal('${user.id}', '${groupId}', '${encodeURIComponent(userDisplay)}')">Move</button>
                                 <button class="btn-remove-user" onclick="deleteUser('${user.id}', '${escapeHtml(userDisplay)}')">Delete User</button>
                             </div>
@@ -2270,32 +2269,6 @@
                 if (response.ok) {
                     showAlert('alertSuccess', '✅ User updated successfully');
                     closeEditUserModal();
-                    loadGroups();
-                } else {
-                    showAlert('alertError', '❌ ' + data.error, 'error');
-                }
-            } catch (err) {
-                showAlert('alertError', '❌ Error: ' + err.message, 'error');
-            }
-        }
-
-        async function removeUserFromGroup(userId, groupId) {
-            if (!confirm('Are you sure you want to remove this user from the group?')) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/admin/users/${userId}/groups/${groupId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    showAlert('alertSuccess', '✅ User removed from group');
                     loadGroups();
                 } else {
                     showAlert('alertError', '❌ ' + data.error, 'error');
