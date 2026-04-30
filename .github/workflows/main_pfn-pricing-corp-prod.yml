@@ -39,6 +39,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Create deploy package
+        run: |
+          zip -r deploy.zip . \
+            -x "*.git*" \
+               "node_modules/*" \
+               "backups/*" \
+               ".github/*" \
+               "*.log" \
+               "npm-debug.log*"
       
       - name: Login to Azure
         uses: azure/login@v2
@@ -53,5 +63,5 @@ jobs:
         with:
           app-name: 'pfn-pricing-corp-prod'
           slot-name: 'Production'
-          package: .
+          package: deploy.zip
           
